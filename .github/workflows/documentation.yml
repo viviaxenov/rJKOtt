@@ -11,9 +11,10 @@ jobs:
     steps:
       - uses: actions/checkout@v4
       - uses: actions/setup-python@v5
+      - uses: docker://pandoc/core:2.9
       - name: Install dependencies
         run: |
-          pip install sphinx sphinx_rtd_theme myst_parser nbsphinx pandoc
+          pip install sphinx sphinx_rtd_theme myst_parser nbsphinx
       - name: Sphinx build
         run: |
           sphinx-build docs _build
