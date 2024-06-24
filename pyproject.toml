@@ -1,0 +1,32 @@
+[build-system]
+requires = ["setuptools"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "rJKOtt"
+authors = [
+  {name = "Vitalii Aksenov", email = "viviaxenov@gmail.com"},
+]
+readme = 'README.md'
+version = "0.0.1"
+requires-python = ">= 3.8"
+dependencies = [
+    "docstring-inheritance", 
+    "matplotlib >= 3.7.2", 
+    "numpy >= 1.26,<2", 
+    "numba >= 0.59.1",
+    "scipy >= 1.11.4", 
+    "teneva >= 0.14.8", 
+    "typing_extensions >= 4.11.0", 
+]
+
+[project.optional-dependencies]
+extra = [
+    "emcee >= 3.1.6", 
+    "geomloss >= 0.2.6", 
+    "h5py >= 3.11.0", 
+    "num2tex >= 0.8", 
+    "pandas >= 2.1.4", 
+    "POT >= 0.9.3", 
+    "torch >= 2.2.2", 
+]
