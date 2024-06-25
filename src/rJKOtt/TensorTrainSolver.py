@@ -253,7 +253,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         rho_infty (Callable) : function, proportional to the probability density of the posterior. Should have signature `(N_samples, dim) -> (dim, )`
         rho_start (TensorTrainDistribution) : starting distribution, discretized on grid. The posterior will be approximated on the same grid.
         posterior_cache_size (int): maximal size of the cache
-        solver_params (TensorTrainSolverParams) : self-explanatory
+        solver_params (TensorTrainSolverParams) : self-explanatory; if not given, uses defaults defined in `TensorTrainSolverParams` class
 
     Attributes:
         grid (Grid) : self-explanatory
@@ -267,9 +267,11 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         self,
         rho_infty: Callable,
         rho_start: TensorTrainDistribution,
-        solver_params: TensorTrainSolverParams,
+        solver_params: TensorTrainSolverParams = None,
         posterior_cache_size: int = int(1e6),
     ):
+        if solver_params is None:
+            solver_params = TensorTrainSolverParams() # default params
         self._rho_infty = rho_infty
         self.grid = rho_start.grid
         self.params = solver_params

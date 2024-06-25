@@ -45,7 +45,6 @@ for target in [gm, doublemoon, nonconvex]:
     solver = TensorTrainSolver(
         target.density,  # The function x -> rho_infty(x)
         tt_init,  # Info on the grid and the initial distribution (in TT)
-        TensorTrainSolverParams(),  # Solver's parameters; for the most of them, defaults are OK
     )
 
     solver.params.max_rank = 5  # Max TT rank for all the represented variables
