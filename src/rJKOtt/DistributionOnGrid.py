@@ -1,3 +1,4 @@
+from __future__ import annotations
 import abc
 from typing import Literal, Callable, Tuple, List, Union, TypeAlias, Dict
 from docstring_inheritance import GoogleDocstringInheritanceInitMeta
@@ -514,6 +515,7 @@ class GaussianMixture(DistributionOnGrid):
         return density_marginal(X)
 
 
+
 class DenseArrayDistribution(DistributionOnGrid):
     """Stores the density on the full grid. Run for dim <= 4, or face memory issues
 
@@ -569,6 +571,58 @@ class DenseArrayDistribution(DistributionOnGrid):
 
         return density_marginal
 
+    @classmethod
+    def get_nonconvex(cls, grid: Grid, a: np.ndarray) -> DenseArrayDistribution:
+        """Get a test distribution with nonconvex potential
+
+        .. math::
+
+            \\rho_{\\text{NC}} \\propto \\exp(-V_{\\text{NC}})
+
+            V_{ \\text{NC}}(x) =  \\left(  \\sum \\limits_{i = 1}^3  \\sqrt{|x_i - a_i|}  \\right)^2
+
+        Args:
+            grid : grid
+            a : the shift of the distribution
+
+        Returns:
+            DenseArrayDistribution : the distribution
+        """
+        assert grid.dim == a.shape[0]
+
+        def _log_prob_nonconvex(_x: np.ndarray) -> np.ndarray:
+            return -np.linalg.norm(_x - a[np.newaxis, :], ord=0.5, axis=-1)
+
+        distr = cls(grid, lambda _x: np.exp(_log_prob_nonconvex(_x)))
+        distr.log_density = _log_prob_nonconvex
+
+        return distr
+
+    @classmethod
+    def get_double_moon(cls, grid: Grid, a: np.float64) -> DenseArrayDistribution:
+        """Get a test bimodal distribution of the form
+
+        .. math::
+
+             \\rho_{ \\text{DM}}(x)  \\propto  \\exp \\left( -2( \\|x \\|_2 - a)^2 \\right)  \\left(  \\exp(-2(x_1 -a)^2) +  \\exp(-2(x_1 +a)^2)  \\right)
+
+        Args:
+            grid : grid
+            a : the shift of the distribution (int the first dimension)
+
+        Returns:
+            DenseArrayDistribution : the distribution
+
+        """
+
+        def _prob_double_moon(_x: np.ndarray) -> np.ndarray:
+            nx = np.linalg.norm(_x, ord=2, axis=-1)
+            x1 = _x[..., 0]
+            return np.exp(-2.0 * (nx - a) ** 2) * (
+                np.exp(-2.0 * (x1 - a) ** 2) + np.exp(-2.0 * (x1 + a) ** 2)
+            )
+
+        return cls(grid, _prob_double_moon)
 
 class TensorTrainDistribution(DistributionOnGrid):
     """Distribution with density on grid stored in the compressed TT format
@@ -616,54 +670,4 @@ class TensorTrainDistribution(DistributionOnGrid):
         return density_marginal
 
 
-def get_distribution_nonconvex(grid: Grid, a: np.ndarray) -> DenseArrayDistribution:
-    """Get a test distribution with nonconvex potential
 
-    .. math::
-
-        \\rho_{\\text{NC}} \\propto \\exp(-V_{\\text{NC}})
-
-        V_{ \\text{NC}}(x) =  \\left(  \\sum \\limits_{i = 1}^3  \\sqrt{|x_i - a_i|}  \\right)^2
-
-    Args:
-        grid : grid
-        a : the shift of the distribution
-
-    Returns:
-        DenseArrayDistribution : the distribution
-    """
-    assert grid.dim == a.shape[0]
-
-    def _log_prob_nonconvex(_x: np.ndarray) -> np.ndarray:
-        return -np.linalg.norm(_x - a[np.newaxis, :], ord=0.5, axis=-1)
-
-    distr = DenseArrayDistribution(grid, lambda _x: np.exp(_log_prob_nonconvex(_x)))
-    distr.log_density = _log_prob_nonconvex
-
-    return distr
-
-
-def get_distribution_double_moon(grid: Grid, a: np.float64) -> DenseArrayDistribution:
-    """Get a test bimodal distribution of the form
-
-    .. math::
-
-         \\rho_{ \\text{DM}}(x)  \\propto  \\exp \\left( -2( \\|x \\|_2 - a)^2 \\right)  \\left(  \\exp(-2(x_1 -a)^2) +  \\exp(-2(x_1 +a)^2)  \\right)
-
-    Args:
-        grid : grid
-        a : the shift of the distribution (int the first dimension)
-
-    Returns:
-        DenseArrayDistribution : the distribution
-
-    """
-
-    def _prob_double_moon(_x: np.ndarray) -> np.ndarray:
-        nx = np.linalg.norm(_x, ord=2, axis=-1)
-        x1 = _x[..., 0]
-        return np.exp(-2.0 * (nx - a) ** 2) * (
-            np.exp(-2.0 * (x1 - a) ** 2) + np.exp(-2.0 * (x1 + a) ** 2)
-        )
-
-    return DenseArrayDistribution(grid, _prob_double_moon)
