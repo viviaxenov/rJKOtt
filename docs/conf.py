@@ -40,6 +40,8 @@ autodoc_default_options = {
     # "undoc-members": True,
     # "private-members": True,
 }
+autodoc_mock_imports = ['numpy', 'scipy', 'teneva', 'matplotlib']
+autodoc_typehints = 'description'
 
 # Add any paths that contain templates here, relative to this directory.
 templates_path = ["_templates"]
