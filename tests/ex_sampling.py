@@ -35,12 +35,7 @@ nonconvex = DenseArrayDistribution.get_nonconvex(grid, np.array([1., 1. , 0.]))
 
 
 for target in [gm, doublemoon, nonconvex]:
-    tt_init = TensorTrainDistribution(
-        grid,
-        tt_independent_gaussians(  # Gives the density of standard normal in TT format
-            [0.0] * dim, [1.0] * dim, [np.linspace(-L, L, _N, endpoint=True) for _N in N]
-        ),
-    )
+    tt_init = TensorTrainDistribution.gaussian(grid) # standart Gaussiam
 
     solver = TensorTrainSolver(
         target.density,  # The function x -> rho_infty(x)

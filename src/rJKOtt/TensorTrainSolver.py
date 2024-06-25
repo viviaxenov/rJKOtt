@@ -981,3 +981,4 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         self,
     ) -> TensorTrainDistribution:
         return TensorTrainDistribution(self.grid, self._rho_cur)
+

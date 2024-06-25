@@ -1,13 +1,13 @@
 from __future__ import annotations
 import abc
-from typing import Literal, Callable, Tuple, List, Union, TypeAlias, Dict
+from typing import Literal, Callable, Tuple, List, Union, TypeAlias, Dict, Iterable
 from docstring_inheritance import GoogleDocstringInheritanceInitMeta
 
 import warnings
 
 import numpy as np
 import teneva
-from scipy.stats import multivariate_normal, multinomial
+from scipy.stats import multivariate_normal, multinomial, norm
 
 import matplotlib.pyplot as plt
 
@@ -515,7 +515,6 @@ class GaussianMixture(DistributionOnGrid):
         return density_marginal(X)
 
 
-
 class DenseArrayDistribution(DistributionOnGrid):
     """Stores the density on the full grid. Run for dim <= 4, or face memory issues
 
@@ -624,6 +623,7 @@ class DenseArrayDistribution(DistributionOnGrid):
 
         return cls(grid, _prob_double_moon)
 
+
 class TensorTrainDistribution(DistributionOnGrid):
     """Distribution with density on grid stored in the compressed TT format
 
@@ -669,5 +669,67 @@ class TensorTrainDistribution(DistributionOnGrid):
 
         return density_marginal
 
+    @classmethod
+    def rank1_fx(cls, grid: Grid, fns: Union[List[Callable], Callable]) -> TensorTrainDistribution:
+        """Convenience function to create a rank-1 TT with components
 
+        .. math::
+                
+            A^i_{1k1} = f^i(x_{i,k}),\\ i = \\overline{1,\\ d}
 
+        where :math:`x_{i,k},\\ k = \\overline{1, N_i}` is the unidimensional grid in i-th direction
+
+        Args:
+            grid: the grid to discretize on
+            fns: functions :math:`f^i`
+
+        Returns:
+            TensorTrainDistribution : the distribution
+        """
+        if callable(fns):
+            fns = [
+                fns,
+            ] * grid.dim
+        assert len(fns) == grid.dim
+
+        tt_nodes = [
+            f(grid.get_1d_grid(i)).reshape((1, -1, 1)) for i, f in enumerate(fns)
+        ]
+        return cls(grid, tt_nodes)
+
+    @classmethod
+    def gaussian(
+        cls,
+        grid: Grid,
+        ms: Union[float, List[float], np.ndarray] = 0.0,
+        sigmas: Union[float, List[float], np.ndarray] = 1.0,
+    ) -> TensorTrainDistribution:
+        """A TT approximation of the density of the distribution with each parameter being independent and distributed as
+
+        .. math::
+            
+            x_i \sim \\mathcal{N}(m_i, \\sigma_i),\\ i = \\overline{1,\\ d}
+
+        Args:
+            grid: the grid to discretize on
+            ms: means :math:`m_i` of each parameter
+            sigmas: standard deviations :math:`sigma_i` of each parameter
+
+        Returns:
+            TensorTrainDistribution : the distribution
+        """
+        if not isinstance(ms, Iterable):
+            ms = [
+                ms,
+            ] * grid.dim
+        if not isinstance(sigmas, Iterable):
+            sigmas = [
+                sigmas,
+            ] * grid.dim
+
+        assert len(ms) == grid.dim
+        assert len(sigmas) == grid.dim
+
+        fns = [lambda _x: norm.pdf(_x, loc=m, scale=sigma) for m, sigma in zip(ms, sigmas)]
+
+        return cls.rank1_fx(grid, fns)
