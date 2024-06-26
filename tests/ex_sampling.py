@@ -2,7 +2,6 @@
 # sys.path.append('../src/')
 
 from rJKOtt import *
-from rJKOtt.utility import tt_independent_gaussians
 import numpy as np
 from scipy.stats import uniform
 import matplotlib.pyplot as plt
@@ -12,7 +11,7 @@ N_comp = 5
 dim = 3
 L = 3.0  # Choose the grid bounds
 N = [
-    50,
+    30,
 ] * dim  # Number of nodes in the grid; can be chosen independently in each direction, but we take uniforn
 grid = Grid(-L, L, N, dim)  # Initialize the grid
 means = uniform.rvs(loc=-L / 2, scale=L / 1, size=(N_comp, dim), random_state=1)

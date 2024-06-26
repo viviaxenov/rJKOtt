@@ -934,7 +934,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         """
         x_cur = sample_x0.copy()
         x_cur = self.grid.clip_sample(x_cur)
-        old_shape = sample_x0.shape
+        old_shape = x_cur.shape
         dim = sample_x0.shape[-1]
         n_em = (
             self.params.sampling_n_euler_maruyama_steps
