@@ -69,11 +69,29 @@ class Grid:
     def __iter__(
         self,
     ):
+        """To use with teneva.ind_to_poi and teneva.poi_to_ind"""
         return (item for item in (self.left, self.right, self.N_nodes))
 
-    def get_1d_grid(self, i: int) -> np.ndarray:
+    def clip_sample(self, xs: np.ndarray) -> np.ndarray:
+        """Given an array of points, delete those of them that are out of the grid's span
+
+        Args:
+            xs : the points; should have shape `(N_points, dim)`
+
+        Returns:
+            np.ndarray : fitting points
         """
-        Return grid points in i-th dimension
+
+        assert xs.shape[-1] == self.dim
+        select_indices = np.all(xs <= self.right, axis=-1) & np.all(
+            xs >= self.left, axis=-1
+        )
+        xs = xs[select_indices, :]
+
+        return xs
+
+    def get_1d_grid(self, i: int) -> np.ndarray:
+        """Return grid points in i-th dimension
 
         Args:
             i : index of the dimension; `0 <= i < dim`
@@ -84,8 +102,7 @@ class Grid:
         return np.linspace(self.left[i], self.right[i], self.N_nodes[i], endpoint=True)
 
     def get_2d_grid(self, i: int, j: int) -> Tuple[np.ndarray, np.ndarray]:
-        """
-        Return grid points in i-th dimension
+        """Return grid points in i-th dimension
 
         Args:
             i : index of the first dimension; `0 <= i < dim`
@@ -670,11 +687,13 @@ class TensorTrainDistribution(DistributionOnGrid):
         return density_marginal
 
     @classmethod
-    def rank1_fx(cls, grid: Grid, fns: Union[List[Callable], Callable]) -> TensorTrainDistribution:
+    def rank1_fx(
+        cls, grid: Grid, fns: Union[List[Callable], Callable]
+    ) -> TensorTrainDistribution:
         """Convenience function to create a rank-1 TT with components
 
         .. math::
-                
+
             A^i_{1k1} = f^i(x_{i,k}),\\ i = \\overline{1,\\ d}
 
         where :math:`x_{i,k},\\ k = \\overline{1, N_i}` is the unidimensional grid in i-th direction
@@ -707,7 +726,7 @@ class TensorTrainDistribution(DistributionOnGrid):
         """A TT approximation of the density of the distribution with each parameter being independent and distributed as
 
         .. math::
-            
+
             x_i \sim \\mathcal{N}(m_i, \\sigma_i),\\ i = \\overline{1,\\ d}
 
         Args:
@@ -730,6 +749,8 @@ class TensorTrainDistribution(DistributionOnGrid):
         assert len(ms) == grid.dim
         assert len(sigmas) == grid.dim
 
-        fns = [lambda _x: norm.pdf(_x, loc=m, scale=sigma) for m, sigma in zip(ms, sigmas)]
+        fns = [
+            lambda _x: norm.pdf(_x, loc=m, scale=sigma) for m, sigma in zip(ms, sigmas)
+        ]
 
         return cls.rank1_fx(grid, fns)

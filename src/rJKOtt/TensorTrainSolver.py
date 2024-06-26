@@ -271,7 +271,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         posterior_cache_size: int = int(1e6),
     ):
         if solver_params is None:
-            solver_params = TensorTrainSolverParams() # default params
+            solver_params = TensorTrainSolverParams()  # default params
         self._rho_infty = rho_infty
         self.grid = rho_start.grid
         self.params = solver_params
@@ -933,6 +933,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             np.ndarray : sample from the distribution of the last step
         """
         x_cur = sample_x0.copy()
+        x_cur = self.grid.clip_sample(x_cur)
         old_shape = sample_x0.shape
         dim = sample_x0.shape[-1]
         n_em = (
@@ -975,10 +976,10 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                     2.0 * beta_cur * tau_em
                 ) * np.random.randn(*x_cur.shape)
                 t_cur += tau_em
+            x_cur = self.grid.clip_sample(x_cur)
         return x_cur
 
     def get_current_distribution(
         self,
     ) -> TensorTrainDistribution:
         return TensorTrainDistribution(self.grid, self._rho_cur)
-

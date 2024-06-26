@@ -6,15 +6,6 @@ from typing import Literal, Callable, Tuple, List, Union, TypeAlias
 
 tt_vector: TypeAlias = List[np.ndarray]
 
-
-def crop_to_cube(xs: np.ndarray, L: np.float64) -> np.ndarray:
-    """foo
-    """
-    select_indices = np.all(xs <= L, axis=-1) & np.all(xs >= -L, axis=-1)
-    xs = xs[select_indices, :]
-
-    return xs
-
 def tt_sum_multi_axis(a: tt_vector, axis: Union[int, List[int]]=-1):
     """Sum TT-vector over specified axes.
 
