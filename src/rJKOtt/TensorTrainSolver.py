@@ -216,7 +216,7 @@ class TensorTrainSolverParams:
     zero_threshold: float = 1e-16
     """Safeguard when computing small values that must be positive, but could go below zero due to numerical erros"""
 
-    sampling_ode_rtol: float = 1e-4
+    sampling_ode_rtol: float = 1e-3
     """Tolerance of solving the sampling ODE"""
     sampling_ode_atol: float = 1e-6
     """Tolerance of solving the sampling ODE"""
