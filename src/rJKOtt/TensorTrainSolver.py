@@ -343,6 +343,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
         Y_old = np.array([self._posterior_cache[tuple(_i)] for _i in I_old])
 
+
         Y_return = np.zeros(_I.shape[0])
         Y_return[idx_old] = Y_old
 
@@ -353,9 +354,6 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             Y_return[idx_new] = Y_new
 
         if update:
-            self.n_calls += len(idx_new)
-            self.n_cache += len(idx_old)
-
             n_add_to_cache = min(
                 len(idx_new),
                 self.posterior_cache_max_size - len(self._posterior_cache),
@@ -363,6 +361,9 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
             for k, i in enumerate(I_new[:n_add_to_cache]):
                 self._posterior_cache[tuple(i)] = float(Y_new[k])
+
+            self.n_cache += len(idx_old)
+            self.n_calls += len(idx_new)
 
         return Y_return
 
