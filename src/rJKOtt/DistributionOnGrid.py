@@ -546,11 +546,6 @@ class DenseArrayDistribution(DistributionOnGrid):
     ):
         super().__init__(grid)
 
-        if self._dim > 4:
-            warnings.warn(
-                f"Dimension {self._dim} > 4 can cause memory errors", ResourceWarning
-            )
-
         self._rho = rho
         grids_1d = [
             np.linspace(
@@ -561,6 +556,21 @@ class DenseArrayDistribution(DistributionOnGrid):
             )
             for i in range(self.dim)
         ]
+        self._full_grid = None
+        self._rho_on_grid = None
+        self._normalization_const = 1.0
+
+        if self._dim > 4:
+            warnings.warn(
+                f"Dimension {self._dim} > 4 can cause memory errors", ResourceWarning
+            )
+
+        else:
+            self._set_full_grid
+
+    def _set_full_grid(
+        self,
+    ):
         self._full_grid = np.stack(np.meshgrid(*grids_1d, indexing="ij"), axis=-1)
         self._rho_on_grid = rho(self._full_grid)
         self._normalization_const = np.sum(self._rho_on_grid) * np.prod(self.grid.hx)
@@ -573,6 +583,9 @@ class DenseArrayDistribution(DistributionOnGrid):
         return np.log(self.density(x))
 
     def get_marginal_on_grid(self, marginals):
+        if self._rho_on_grid is None:
+            self._set_full_grid
+
         if isinstance(marginals, int):
             marginals = (marginals,)
         other_axes = set(range(self._dim))
