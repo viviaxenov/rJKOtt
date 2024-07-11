@@ -584,7 +584,7 @@ class DenseArrayDistribution(DistributionOnGrid):
 
     def get_marginal_on_grid(self, marginals):
         if self._rho_on_grid is None:
-            self._set_full_grid
+            self._set_full_grid()
 
         if isinstance(marginals, int):
             marginals = (marginals,)
