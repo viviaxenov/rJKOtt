@@ -181,6 +181,8 @@ class TensorTrainSolverParams:
     """Number of function evaluation in TT-cross when real posterior calls are not required (initial condition and KL estimation)"""
     cross_rel_diff: float = 1e-6
     """Cross stopping criterion: if the solution relative change is less, cross stops"""
+    cross_use_validation: bool = False
+    """If to use error on validation subset stopping criterion during the cross approximation iteration"""
     cross_validation_rtol: float = 1e-6
     """Cross stopping criterion: if error on validation subset is less, cross stops """
     cross_n_validation: int = 1000
@@ -343,7 +345,6 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
         Y_old = np.array([self._posterior_cache[tuple(_i)] for _i in I_old])
 
-
         Y_return = np.zeros(_I.shape[0])
         Y_return[idx_old] = Y_old
 
@@ -381,12 +382,22 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         rhs_fn = lambda _I: teneva.act_one.get_many(self._rho_cur, _I) / np.maximum(
             teneva.act_one.get_many(eta, _I), self.params.zero_threshold
         )
-        I_test = teneva.sample_rand(
-            teneva.props.shape(eta), self.params.cross_n_validation
-        )
-        Y_test = rhs_fn(I_test)
-        # old behavior; leave for reproducibility
-        # norm_test = np.linalg.norm(Y_test.ravel(), ord=np.inf)
+        if self.params.cross_use_validation:
+            I_test = teneva.sample_rand(
+                teneva.props.shape(eta), self.params.cross_n_validation
+            )
+            Y_test = rhs_fn(I_test)
+            e_test = (
+                teneva.sum(hat_eta_initial)
+                / np.prod(self.grid.N_nodes)
+                * self.params.cross_validation_rtol
+            )
+            # old behavior; leave for reproducibility
+            # norm_test = np.linalg.norm(Y_test.ravel(), ord=np.inf)
+        else:
+            I_test = None
+            Y_test = None
+            e_test = None
 
         info = {}
 
@@ -400,9 +411,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             info=info,
             I_vld=I_test,
             y_vld=Y_test,
-            e_vld=teneva.sum(hat_eta_initial)
-            / np.prod(self.grid.N_nodes)
-            * self.params.cross_validation_rtol,
+            e_vld=e_test,
         )
         dt = perf_counter() - t
 
@@ -465,20 +474,29 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             eta_initial : initial guess for the cross approximation
         """
         # I decided not to update cache in the test calls to estimate the influence only of the indices, selected by maxvol inside tt_cross; maybe should turn update=True in real application
-        rhs_fn = lambda _I: (
-            self._eval_posterior_cached(_I, update=False)
-            / np.maximum(
-                teneva.act_one.get_many(hat_eta, _I), self.params.zero_threshold
+
+        if self.params.cross_use_validation:
+            rhs_fn = lambda _I: (
+                self._eval_posterior_cached(_I, update=False)
+                / np.maximum(
+                    teneva.act_one.get_many(hat_eta, _I), self.params.zero_threshold
+                )
+            ) ** (1.0 / (1.0 + 2.0 * beta))
+            I_test = teneva.sample_rand(
+                teneva.props.shape(eta), self.params.cross_n_validation
             )
-        ) ** (1.0 / (1.0 + 2.0 * beta))
-
-        info = {}
-
-        I_test = teneva.sample_rand(
-            teneva.props.shape(hat_eta), self.params.cross_n_validation
-        )
-        Y_test = rhs_fn(I_test)
-        norm_test = np.linalg.norm(Y_test.ravel(), ord=np.inf)
+            Y_test = rhs_fn(I_test)
+            e_test = (
+                teneva.sum(hat_eta_initial)
+                / np.prod(self.grid.N_nodes)
+                * self.params.cross_validation_rtol
+            )
+            # old behavior; leave for reproducibility
+            # norm_test = np.linalg.norm(Y_test.ravel(), ord=np.inf)
+        else:
+            I_test = None
+            Y_test = None
+            e_test = None
 
         rhs_fn_cached = lambda _I: (
             self._eval_posterior_cached(_I)
@@ -486,6 +504,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                 teneva.act_one.get_many(hat_eta, _I), self.params.zero_threshold
             )
         ) ** (1.0 / (1.0 + 2.0 * beta))
+        info = {}
 
         print("\tSolving terminal condition ", end="", flush=True)
         t = perf_counter()
@@ -497,9 +516,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             info=info,
             I_vld=I_test,
             y_vld=Y_test,
-            e_vld=teneva.sum(eta_initial)
-            / np.prod(self.grid.N_nodes)
-            * self.params.cross_validation_rtol,
+            e_vld=e_test,
         )
         dt = perf_counter() - t
         # Some diagnostic printing
