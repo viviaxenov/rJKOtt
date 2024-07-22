@@ -5,7 +5,9 @@ The project aims at modelling probability distributions with use of entropy-**r*
 The goal is, given pointwise access to the unnormalized density of a complicated probability distribution in high dimension, to fit a compressed model which will allow to sample from it and solve some downstream tasks.
 
 ## Installation
-`pip install --upgrade rJKOtt@git+https://github.com/viviaxenov/rJKOtt`
+```
+pip install --upgrade rJKOtt@git+https://github.com/viviaxenov/rJKOtt
+```
 ### Requirements:
   - `teneva` (https://github.com/AndreiChertkov/teneva)
   - TBD
