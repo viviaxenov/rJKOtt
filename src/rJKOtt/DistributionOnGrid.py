@@ -547,7 +547,7 @@ class DenseArrayDistribution(DistributionOnGrid):
         super().__init__(grid)
 
         self._rho = rho
-        grids_1d = [
+        self._grids_1d = [
             np.linspace(
                 self.grid.left[i],
                 self.grid.right[i],
@@ -571,8 +571,9 @@ class DenseArrayDistribution(DistributionOnGrid):
     def _set_full_grid(
         self,
     ):
-        self._full_grid = np.stack(np.meshgrid(*grids_1d, indexing="ij"), axis=-1)
-        self._rho_on_grid = rho(self._full_grid)
+        self._full_grid = np.stack(np.meshgrid(*self._grids_1d, indexing="ij"), axis=-1)
+        old_shape = self._full_grid.shape[:-1]
+        self._rho_on_grid = self._rho(self._full_grid.reshape(-1, self.dim)).reshape(old_shape)
         self._normalization_const = np.sum(self._rho_on_grid) * np.prod(self.grid.hx)
         self._rho_on_grid /= self._normalization_const
 
