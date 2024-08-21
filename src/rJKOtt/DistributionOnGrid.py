@@ -573,7 +573,9 @@ class DenseArrayDistribution(DistributionOnGrid):
     ):
         self._full_grid = np.stack(np.meshgrid(*self._grids_1d, indexing="ij"), axis=-1)
         old_shape = self._full_grid.shape[:-1]
-        self._rho_on_grid = self._rho(self._full_grid.reshape(-1, self.dim)).reshape(old_shape)
+        self._rho_on_grid = self._rho(self._full_grid.reshape(-1, self.dim)).reshape(
+            old_shape
+        )
         self._normalization_const = np.sum(self._rho_on_grid) * np.prod(self.grid.hx)
         self._rho_on_grid /= self._normalization_const
 
@@ -764,7 +766,8 @@ class TensorTrainDistribution(DistributionOnGrid):
         assert len(sigmas) == grid.dim
 
         fns = [
-            lambda _x: norm.pdf(_x, loc=m, scale=sigma) for m, sigma in zip(ms, sigmas)
+            lambda _x, mean=m, sig=sigma: norm.pdf(_x, loc=mean, scale=sig)
+            for m, sigma in zip(ms, sigmas)
         ]
 
         return cls.rank1_fx(grid, fns)
