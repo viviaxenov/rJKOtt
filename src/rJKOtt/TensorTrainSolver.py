@@ -857,7 +857,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         dim = self.grid.dim
         shift = np.eye(self.grid.dim, dtype=int)
         ode_potential_fn = lambda _eta, _hat_eta: np.log(
-            np.maximum(_eta / _hat_eta, self.params.zero_threshold)
+            np.maximum(_eta, self.params.zero_threshold) / np.maximum(_hat_eta, self.params.zero_threshold)
         )
         sde_potential_fn = lambda _eta: np.log(
             np.maximum(_eta, self.params.zero_threshold)
@@ -952,7 +952,6 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         """
         x_cur = sample_x0.copy()
         x_cur = self.grid.clip_sample(x_cur)
-        old_shape = x_cur.shape
         dim = sample_x0.shape[-1]
         n_em = (
             self.params.sampling_n_euler_maruyama_steps
@@ -964,6 +963,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         for T_cur, beta_cur, eta_t1, hat_eta_t0 in zip(
             self.Ts, self.betas, self._etas_t1, self._hat_etas_t0
         ):
+            old_shape = x_cur.shape
             drifts = self._get_drift_terms_fn(eta_t1, hat_eta_t0, T_cur, beta_cur)
             ode_drift = lambda _t, _x: drifts(_t, _x)[0]
             rhs_ode = lambda _t, _x: ode_drift(_t, _x.reshape(old_shape)).reshape(-1)

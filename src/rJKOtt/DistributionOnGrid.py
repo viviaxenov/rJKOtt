@@ -8,6 +8,8 @@ import warnings
 import numpy as np
 import teneva
 from scipy.stats import multivariate_normal, multinomial, norm
+from scipy.integrate import solve_ivp
+from scipy.optimize import minimize_scalar
 
 import matplotlib.pyplot as plt
 
@@ -83,8 +85,8 @@ class Grid:
         """
 
         assert xs.shape[-1] == self.dim
-        select_indices = np.all(xs <= self.right, axis=-1) & np.all(
-            xs >= self.left, axis=-1
+        select_indices = np.all(xs <= self.right[np.newaxis, :], axis=-1) & np.all(
+            xs >= self.left[np.newaxis, :], axis=-1
         )
         xs = xs[select_indices, :]
 
@@ -573,7 +575,9 @@ class DenseArrayDistribution(DistributionOnGrid):
     ):
         self._full_grid = np.stack(np.meshgrid(*self._grids_1d, indexing="ij"), axis=-1)
         old_shape = self._full_grid.shape[:-1]
-        self._rho_on_grid = self._rho(self._full_grid.reshape(-1, self.dim)).reshape(old_shape)
+        self._rho_on_grid = self._rho(self._full_grid.reshape(-1, self.dim)).reshape(
+            old_shape
+        )
         self._normalization_const = np.sum(self._rho_on_grid) * np.prod(self.grid.hx)
         self._rho_on_grid /= self._normalization_const
 
@@ -678,8 +682,8 @@ class TensorTrainDistribution(DistributionOnGrid):
         Note:
             Returns a nearest interpolation; Will implement linear interpolation in the future...
         """
-        I = teneva.poi_to_ind(x, self._grid.min, self._grid.max, self._grid.N)
-        return self._rho_getter(I)
+        I = teneva.poi_to_ind(x, *self.grid)
+        return teneva.act_one.get_many(self.rho_tt, I)
 
     def log_density(self, x: np.ndarray) -> np.ndarray:
         return np.log(self.density(x))
@@ -700,6 +704,44 @@ class TensorTrainDistribution(DistributionOnGrid):
 
         return density_marginal
 
+    def get_credible_interval(self, i: int, prob: float):
+        rho_1d_grid = self.get_marginal_on_grid(i)
+        x_1d = self.grid.get_1d_grid(i)
+
+        # rho_1d_grid[rho_1d_grid < 0.0] = 0.0
+        # rho_1d_grid += 1e-30
+        # rho_1d_grid /= np.sum(rho_1d_grid) * self.grid.hx[i]
+
+        rho_1d = lambda x: np.interp(x, x_1d, rho_1d_grid)
+
+        event = lambda t, y: y[0] - prob
+        event.terminal = True
+
+        def _interval_len(left: float):
+            ode_result = solve_ivp(
+                lambda t, y: (rho_1d(t),),
+                [
+                    left,
+                    self.grid.right[i],
+                ],
+                (0.0,),
+                events=event,
+                max_step=self.grid.hx[i]/2.,
+            )
+            right = ode_result.t_events[-1]
+            if len(right) > 0:
+                return right[-1] - left
+            return 1e30
+
+        opt_res = minimize_scalar(
+            _interval_len,
+            bracket=(x_1d[0], x_1d[-1]),
+            method="Golden",
+        )
+        left = opt_res.x
+        right = np.minimum(opt_res.x + opt_res.fun, self.grid.right[i])
+        return (left, right)
+
     @classmethod
     def rank1_fx(
         cls, grid: Grid, fns: Union[List[Callable], Callable]
@@ -719,7 +761,7 @@ class TensorTrainDistribution(DistributionOnGrid):
         Returns:
             TensorTrainDistribution : the distribution
         """
-        if callable(fns):
+        if not isinstance(fns, Iterable):
             fns = [
                 fns,
             ] * grid.dim
@@ -763,8 +805,6 @@ class TensorTrainDistribution(DistributionOnGrid):
         assert len(ms) == grid.dim
         assert len(sigmas) == grid.dim
 
-        fns = [
-            lambda _x: norm.pdf(_x, loc=m, scale=sigma) for m, sigma in zip(ms, sigmas)
-        ]
+        fns = [norm(loc=m, scale=sigma).pdf for m, sigma in zip(ms, sigmas)]
 
         return cls.rank1_fx(grid, fns)
