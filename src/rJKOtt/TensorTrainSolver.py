@@ -304,7 +304,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         rho_0: tt_vector,
     ) -> Tuple[tt_vector, tt_vector, tt_vector,]:
         eta = teneva.cross(
-            lambda _I: np.sqrt(teneva.act_one.get_many(rho_0, _I)),
+            lambda _I: np.sqrt(np.maximum(self.params.zero_threshold, teneva.act_one.get_many(rho_0, _I))),
             teneva.tensors.const(teneva.props.shape(rho_0), 1.0),
             m=self.params.cross_nfev_no_posterior,
         )
