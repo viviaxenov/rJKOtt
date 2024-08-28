@@ -48,7 +48,7 @@ class Grid:
                 N_nodes,
             ] * dim
         else:
-            raise RuntimeError(f"Type of N_nodes should be int ot Iterable[int]{}")
+            raise RuntimeError(f"Type of N_nodes should be int ot Iterable[int], got {type(N_nodes)}")
 
         if isinstance(left, float):
             left = [
