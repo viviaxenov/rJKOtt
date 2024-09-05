@@ -1,13 +1,13 @@
 from typing import Literal, Callable, Tuple, List, Union, TypeAlias, Dict
 from dataclasses import dataclass
-from functools import cache
+from functools import lru_cache as cache
 from docstring_inheritance import GoogleDocstringInheritanceInitMeta
 import warnings
 
 import numpy as np
 from scipy.sparse import diags
 from scipy.sparse.linalg import expm, eigsh
-from scipy.integrate import RK45
+from scipy.integrate import solve_ivp
 import teneva
 
 import matplotlib.pyplot as plt
@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from time import perf_counter
 
 from .utility import tt_sum_multi_axis, tt_slice, tt_vector
-from .DistributionOnGrid import Grid, TensorTrainDistribution
+from .DistributionOnGrid import Grid, TensorTrainDistribution, tt_on_grid_grad_of_log
 
 
 @cache
@@ -304,7 +304,11 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         rho_0: tt_vector,
     ) -> Tuple[tt_vector, tt_vector, tt_vector,]:
         eta = teneva.cross(
-            lambda _I: np.sqrt(np.maximum(self.params.zero_threshold, teneva.act_one.get_many(rho_0, _I))),
+            lambda _I: np.sqrt(
+                np.maximum(
+                    self.params.zero_threshold, teneva.act_one.get_many(rho_0, _I)
+                )
+            ),
             teneva.tensors.const(teneva.props.shape(rho_0), 1.0),
             m=self.params.cross_nfev_no_posterior,
         )
@@ -854,14 +858,6 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         Returns:
             Callable: a function such that :math:`(t, x) \\mapsto (\\tilde v(t, x),\\ v(t, x))`
         """
-        dim = self.grid.dim
-        shift = np.eye(self.grid.dim, dtype=int)
-        ode_potential_fn = lambda _eta, _hat_eta: np.log(
-            np.maximum(_eta, self.params.zero_threshold) / np.maximum(_hat_eta, self.params.zero_threshold)
-        )
-        sde_potential_fn = lambda _eta: np.log(
-            np.maximum(_eta, self.params.zero_threshold)
-        )
 
         def _v(t: np.float64, x: np.ndarray):
             assert t >= 0.0 and t <= T
@@ -870,69 +866,9 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             hat_eta = _solve_heat_TT(hat_eta_t0, beta, Tau_fwd, self.grid)
             eta = _solve_heat_TT(eta_t1, -beta, -Tau_bwd, self.grid)
 
-            ind_x = teneva.poi_to_ind(x, *self.grid)
-            eta_hat_0 = teneva.act_one.get_many(hat_eta, ind_x)
-            eta_0 = teneva.act_one.get_many(eta, ind_x)
-
-            # evaluate indices of grid points k_i + 1, i = 1, ... d
-            ind_xp = ind_x[..., np.newaxis, :] + shift  # xp_ijk = x_ki + h_x*delta_ij
-            ind_xp = np.where(
-                ind_xp < np.array(self.grid.N_nodes)[np.newaxis, :], ind_xp, ind_xp - 1
-            )
-
-            # evaluate indices of grid points k_i - 1, i = 1, ... d
-            ind_xm = ind_x[..., np.newaxis, :] - shift  # xm_ijk = x_ki + h_x*delta_ij
-            ind_xm = np.where(ind_xm > -1, ind_xm, ind_xm + 1)  # "padding"
-
-            eta_p = teneva.act_one.get_many(eta, ind_xp.reshape((-1, dim))).reshape(
-                (-1, dim)
-            )
-            eta_hat_p = teneva.act_one.get_many(
-                hat_eta, ind_xp.reshape((-1, dim))
-            ).reshape((-1, dim))
-            eta_m = teneva.act_one.get_many(eta, ind_xm.reshape((-1, dim))).reshape(
-                (-1, dim)
-            )
-            eta_hat_m = teneva.act_one.get_many(
-                hat_eta, ind_xm.reshape((-1, dim))
-            ).reshape((-1, dim))
-
-            # evaluate  \beta(\eta - )
-            ode_potential_p = beta * ode_potential_fn(eta_p, eta_hat_p)
-            ode_potential_0 = beta * ode_potential_fn(eta_0, eta_hat_0)
-            ode_potential_m = beta * ode_potential_fn(eta_m, eta_hat_m)
-
-            sde_potential_p = 2.0 * beta * sde_potential_fn(eta_p)
-            sde_potential_0 = 2.0 * beta * sde_potential_fn(eta_0)
-            sde_potential_m = 2.0 * beta * sde_potential_fn(eta_m)
-
-            # get a 2-nd order finite difference expansion coefs
-            c_x = (x - ind_x * self.grid.hx[np.newaxis, :]) / self.grid.hx[
-                np.newaxis, :
-            ]
-            _u = np.ones_like(ode_potential_p)
-            _M = np.array(
-                [
-                    [_u, _u, _u],
-                    [-(1.0 + c_x), -c_x, (1.0 - c_x)],
-                    [(1.0 + c_x) ** 2, c_x**2, (1.0 - c_x)],
-                ]
-            )
-            _M = np.moveaxis(_M, (2, 3), (0, 1))
-            _rhs = np.array([0.0, 1.0, 0.0])
-            A = np.linalg.solve(_M, _rhs[np.newaxis, np.newaxis])
-
-            ode_grad = (
-                ode_potential_m * A[:, :, 0]
-                + ode_potential_0[:, np.newaxis] * A[:, :, 1]
-                + ode_potential_p * A[:, :, 2]
-            ) / self.grid.hx[np.newaxis, :]
-
-            sde_grad = (
-                sde_potential_m * A[:, :, 0]
-                + sde_potential_0[:, np.newaxis] * A[:, :, 1]
-                + sde_potential_p * A[:, :, 2]
-            ) / self.grid.hx[np.newaxis, :]
+            grad_log_eta = tt_on_grid_grad_of_log(x, eta, self.grid, zero_threshold=self.params.zero_threshold) 
+            ode_grad = beta * (grad_log_eta - tt_on_grid_grad_of_log(x, eta, self.grid, zero_threshold=self.params.zero_threshold))
+            sde_grad = 2. * beta * grad_log_eta
 
             return ode_grad, sde_grad
 
@@ -972,20 +908,16 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             init_val_ode = x_cur.reshape(-1)
             t_start_ode = 0.0
             t_stop_ode = (1.0 - eps_split) * T_cur
-            ode_integrator = RK45(
+
+            ode_result = solve_ivp(
                 rhs_ode,
-                t_start_ode,
+                [t_start_ode, t_stop_ode],
                 init_val_ode,
-                t_stop_ode,
                 first_step=T_cur * 1e-4,
                 rtol=self.params.sampling_ode_rtol,
                 atol=self.params.sampling_ode_atol,
             )
-            with np.errstate(under="ignore"):
-                while ode_integrator.status == "running":
-                    ode_integrator.step()
 
-            x_cur = ode_integrator.y.reshape(old_shape)
             # Do Euler-Maruyama steps
             t_cur = t_stop_ode
             tau_em = eps_split * T_cur / max(n_em, 1)

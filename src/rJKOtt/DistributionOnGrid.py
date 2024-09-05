@@ -48,7 +48,9 @@ class Grid:
                 N_nodes,
             ] * dim
         else:
-            raise RuntimeError(f"Type of N_nodes should be int ot Iterable[int], got {type(N_nodes)}")
+            raise RuntimeError(
+                f"Type of N_nodes should be int ot Iterable[int], got {type(N_nodes)}"
+            )
 
         if isinstance(left, float):
             left = [
@@ -122,6 +124,106 @@ class Grid:
         x1 = np.linspace(self.left[i], self.right[i], self.N_nodes[i], endpoint=True)
         x2 = np.linspace(self.left[j], self.right[j], self.N_nodes[j], endpoint=True)
         return np.meshgrid(x1, x2, indexing="ij")
+
+
+def tt_on_grid_interpolate(x: np.ndarray, F: tt_vector, grid: Grid) -> np.ndarray:
+    """Assuming that `F` is the TT approximation of values of some function in the grid points `grid`, evaluate values of this function at points `x` by linear interpolation
+
+    Args:
+        x : array of points, where the function is to be evaluated. Should be of shape `(N_points, dim)`
+        F : representation of the function values in TT format
+        grid : grid where `F` is defined
+
+    Returns:
+        np.ndarray : values of `F` at `x`
+    """
+    assert x.shape[-1] == grid.dim
+    assert len(F) == grid.dim
+    old_shape = x.shape
+    _x = x.reshape(-1, grid.dim)
+    N_points = x.shape[0]
+    F_at_x = np.ones((N_points, 1))
+
+    for i in range(grid.dim):
+        xk_grid = grid.get_1d_grid(i)
+        xk_point = _x[:, i]
+        core_old = F[i]
+        core_new = interp1d(
+            xk_grid, core_old, axis=1, bounds_error=False, fill_value=0.0
+        )(xk_point)
+        F_at_x = np.einsum(
+            "ij,jil->il",
+            F_at_x,
+            core_new,
+        )
+
+    return F_at_x.reshape(old_shape[:-1])
+
+
+def tt_on_grid_value_and_gradient(
+    x: np.ndarray, F: tt_vector, grid: Grid
+) -> np.ndarray:
+    """Assuming that `F` is the TT approximation of values of some function in the grid points `grid`, evaluate its value and gradien at points `x` by linear interpolation of the gunction and piecewise-constant interpolation of the gradient.
+
+    Args:
+        x : array of points, where the function is to be evaluated. Should be of shape `(N_points, dim)`
+        F : representation of the function values in TT format
+        grid : grid where `F` is defined
+
+    Returns:
+        (np.ndarray, np.ndarray) : values of `F` and `\\nabla F` at `x`
+    """
+    dim = grid.dim
+    assert x.shape[-1] == dim
+    assert len(F) == dim
+    old_shape = x.shape
+    _x = x.reshape(-1, dim)
+    N_points = x.shape[0]
+    FdF_at_x = np.ones((N_points, 1 + dim, 1))
+
+    for i in range(grid.dim):
+        hk = grid.hx[i]
+        xk_grid = grid.get_1d_grid(i)
+        xk_point = _x[:, i]
+        core_old = F[i]
+        core_val = interp1d(
+            xk_grid, core_old, axis=1, bounds_error=False, fill_value=0.0
+        )(xk_point)
+
+        X_grid = xk_grid[np.newaxis, :]
+        X_point = xk_point[:, np.newaxis]
+
+        deriv_at_point = (
+            np.where(
+                (X_point > X_grid) & (X_point < X_grid + hk),
+                -1.0,
+                np.where((X_point > X_grid - hk) & (X_point < X_grid), 1.0, 0.0),
+            )
+            / hk
+        )
+        core_deriv = np.einsum("ijk,lj->ilk", core_old, deriv_at_point)
+
+        core_new = np.stack((core_val,) * (dim + 1), axis=2)
+        core_new[:, :, i, :] = core_deriv
+
+        FdF_at_x = np.einsum(
+            "ijk,kijl->ijl",
+            FdF_at_x,
+            core_new,
+        )
+
+    dF_at_x = FdF_at_x[:, :dim, 0]
+    F_at_x = FdF_at_x[:, dim, 0]
+
+    return F_at_x.reshape(old_shape[:-1]), dF_at_x.reshape(old_shape)
+
+
+def tt_on_grid_grad_of_log(
+    x: np.ndarray, F: tt_vector, grid: Grid, zero_threshold: np.float64 = 1e-40
+) -> np.ndarray:
+    vF, dF = tt_on_grid_value_and_gradient(x, F, grid)
+
+    return dF / np.maximum(zero_threshold, vF)[:, np.newaxis]
 
 
 class DistributionOnGrid(metaclass=_Meta):
@@ -684,12 +786,13 @@ class TensorTrainDistribution(DistributionOnGrid):
         self._rho_getter = teneva.act_one.getter(self.rho_tt)
 
     def density(self, x: np.ndarray) -> np.ndarray:
+        return tt_on_grid_interpolate(x, self.rho_tt, self.grid)
+
+    def score(self, x: np.nda) -> np.ndarray:
         """
-        Note:
-            Returns a nearest interpolation; Will implement linear interpolation in the future...
+        Note: docstring TBD
         """
-        I = teneva.poi_to_ind(x, *self.grid)
-        return teneva.act_one.get_many(self.rho_tt, I)
+        return tt_on_grid_grad_of_log(x, self.rho_tt, self.grid)
 
     def log_density(self, x: np.ndarray) -> np.ndarray:
         return np.log(self.density(x))
@@ -732,7 +835,7 @@ class TensorTrainDistribution(DistributionOnGrid):
                 ],
                 (0.0,),
                 events=event,
-                max_step=self.grid.hx[i]/2.,
+                max_step=self.grid.hx[i] / 2.0,
             )
             right = ode_result.t_events[-1]
             if len(right) > 0:
@@ -751,25 +854,32 @@ class TensorTrainDistribution(DistributionOnGrid):
     def interpolate(self, new_grid: Grid):
         assert self.dim == new_grid.dim
         rho_tt_new = []
-                    
+
         for i in range(new_grid.dim):
-            x_old = self.grid.get_1d_grid(i) 
+            x_old = self.grid.get_1d_grid(i)
             x_new = new_grid.get_1d_grid(i)
             core_old = self.rho_tt[i]
-            core_new = interp1d(x_old, core_old, axis=1, bounds_error=False, fill_value=0.)(x_new)
+            core_new = interp1d(
+                x_old, core_old, axis=1, bounds_error=False, fill_value=0.0
+            )(x_new)
             rho_tt_new.append(core_new)
 
         return TensorTrainDistribution(new_grid, rho_tt_new)
 
-    def adapt_grid(self: rJKOtt.TensorTrainDistribution, interval_prob: np.float64=0.99, N_new=None):
+    def adapt_grid(
+        self: rJKOtt.TensorTrainDistribution,
+        interval_prob: np.float64 = 0.99,
+        N_new=None,
+    ):
         if N_new is None:
             N_new = self.grid.N_nodes
-        intervals_new = [self.get_credible_interval(i, interval_prob) for i in range(self.dim)] 
+        intervals_new = [
+            self.get_credible_interval(i, interval_prob) for i in range(self.dim)
+        ]
         left_new = [i[0] for i in intervals_new]
         right_new = [i[1] for i in intervals_new]
         grid_new = Grid(left_new, right_new, N_new)
         return self.interpolate(grid_new)
-
 
     @classmethod
     def rank1_fx(
