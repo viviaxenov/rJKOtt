@@ -1,6 +1,6 @@
 from typing import Literal, Callable, Tuple, List, Union, TypeAlias, Dict
 from dataclasses import dataclass
-from functools import cache
+from functools import lru_cache as cache
 from docstring_inheritance import GoogleDocstringInheritanceInitMeta
 import warnings
 
