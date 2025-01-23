@@ -8,9 +8,10 @@ authors = [
   {name = "Vitalii Aksenov", email = "viviaxenov@gmail.com"},
 ]
 readme = 'README.md'
-version = "0.0.1"
+version = "0.1"
 requires-python = ">= 3.8"
 dependencies = [
+    "numpy == 1.26",
     "docstring-inheritance", 
     "numba >= 0.59.1",
     "teneva >= 0.14.8", 
