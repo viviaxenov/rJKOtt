@@ -88,6 +88,9 @@ def _fixed_point_picard(
     max_rank: int = 10,
     trunc_tol: float = 1e-16,
 ) -> Tuple[tt_vector, np.float64]:
+    if relaxation == 1.0:
+        # teneva.[add|add_many] may cause memory leaks;
+        return g_cur, relaxation
     x_new = teneva.truncate(
         teneva.add(
             teneva.mul((1.0 - relaxation), x_cur), teneva.mul(relaxation, g_cur)
@@ -162,6 +165,7 @@ def _fixed_point_2_anderson(
         ],
         r=max_rank,
         e=trunc_tol,
+        trunc_freq=1,
     )
 
     return x_new, relaxation
@@ -866,9 +870,16 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             hat_eta = _solve_heat_TT(hat_eta_t0, beta, Tau_fwd, self.grid)
             eta = _solve_heat_TT(eta_t1, -beta, -Tau_bwd, self.grid)
 
-            grad_log_eta = tt_on_grid_grad_of_log(x, eta, self.grid, zero_threshold=self.params.zero_threshold) 
-            ode_grad = beta * (grad_log_eta - tt_on_grid_grad_of_log(x, eta, self.grid, zero_threshold=self.params.zero_threshold))
-            sde_grad = 2. * beta * grad_log_eta
+            grad_log_eta = tt_on_grid_grad_of_log(
+                x, eta, self.grid, zero_threshold=self.params.zero_threshold
+            )
+            ode_grad = beta * (
+                grad_log_eta
+                - tt_on_grid_grad_of_log(
+                    x, hat_eta, self.grid, zero_threshold=self.params.zero_threshold
+                )
+            )
+            sde_grad = 2.0 * beta * grad_log_eta
 
             return ode_grad, sde_grad
 
@@ -909,14 +920,18 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             t_start_ode = 0.0
             t_stop_ode = (1.0 - eps_split) * T_cur
 
-            ode_result = solve_ivp(
-                rhs_ode,
-                [t_start_ode, t_stop_ode],
-                init_val_ode,
-                first_step=T_cur * 1e-4,
-                rtol=self.params.sampling_ode_rtol,
-                atol=self.params.sampling_ode_atol,
-            )
+            if eps_split < 1.:
+                ode_result = solve_ivp(
+                    rhs_ode,
+                    [t_start_ode, t_stop_ode],
+                    init_val_ode,
+                    first_step=T_cur * 1e-4,
+                    min_step=T_cur * 1e-2,
+                    rtol=self.params.sampling_ode_rtol,
+                    atol=self.params.sampling_ode_atol,
+                    method='RK45',
+                )
+                x_cur = ode_result.y[:, -1].reshape(old_shape)
 
             # Do Euler-Maruyama steps
             t_cur = t_stop_ode
@@ -933,3 +948,14 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         self,
     ) -> TensorTrainDistribution:
         return TensorTrainDistribution(self.grid, self._rho_cur)
+
+    def get_intermediate_distribution(self, t: np.float64, step_no=-1):
+        eta_t1 = self._etas_t1[step_no]
+        hat_eta_t0 = self._hat_etas_t0[step_no]
+        beta = self.betas[step_no]
+        T = self.Ts[step_no]
+        assert 0 <= t and t <= T
+
+        hat_eta = _solve_heat_TT(hat_eta_t0, beta, t, self.grid)
+        eta = _solve_heat_TT(eta_t1, beta, T - t, self.grid)
+        return TensorTrainDistribution(self.grid, teneva.mul(hat_eta, eta))
