@@ -413,8 +413,8 @@ class DistributionOnGrid(metaclass=_Meta):
         axs_diag = np.diag(axs)
         for i, param_i in enumerate(param_subset):
             self.plot_1d_marginal(param_i, *plot_args, axs=axs[i, i], **plot_kwargs)
-        for i in range(1, N_plots):
-            axs[i, i].sharey(axs[i - 1, i - 1])
+        # for i in range(1, N_plots):
+        #     axs[i, i].sharey(axs[i - 1, i - 1])
 
         return fig, axs
 
@@ -821,7 +821,7 @@ class TensorTrainDistribution(DistributionOnGrid):
         # rho_1d_grid += 1e-30
         # rho_1d_grid /= np.sum(rho_1d_grid) * self.grid.hx[i]
 
-        rho_1d = lambda x: np.interp(x, x_1d, rho_1d_grid)
+        rho_1d = lambda x: np.interp(x, x_1d, rho_1d_grid, left=0.0, right=0.0)
 
         event = lambda t, y: y[0] - prob
         event.terminal = True
@@ -851,7 +851,7 @@ class TensorTrainDistribution(DistributionOnGrid):
         right = np.minimum(opt_res.x + opt_res.fun, self.grid.right[i])
         return (left, right)
 
-    def interpolate(self, new_grid: Grid):
+    def interpolate(self, new_grid: Grid) -> TensorTrainDistribution:
         assert self.dim == new_grid.dim
         rho_tt_new = []
 
@@ -867,10 +867,20 @@ class TensorTrainDistribution(DistributionOnGrid):
         return TensorTrainDistribution(new_grid, rho_tt_new)
 
     def adapt_grid(
-        self: rJKOtt.TensorTrainDistribution,
+        self,
         interval_prob: np.float64 = 0.99,
         N_new=None,
-    ):
+    ) -> Grid:
+        """Adapts the grid do be a minimal interval containing `interval_prob` of the distribution in each direction.
+
+        Args:
+            interval_prob : the fraction (from `0` to `1.0`) of the distribution
+            N_new : number of nodes in the new grid
+
+        Returns:
+            Grid: a new grid
+
+        """
         if N_new is None:
             N_new = self.grid.N_nodes
         intervals_new = [
@@ -879,7 +889,60 @@ class TensorTrainDistribution(DistributionOnGrid):
         left_new = [i[0] for i in intervals_new]
         right_new = [i[1] for i in intervals_new]
         grid_new = Grid(left_new, right_new, N_new)
+        return grid_new
+
+    def adapt_by_interpolation(
+        self: rJKOtt.TensorTrainDistribution,
+        interval_prob: np.float64 = 0.99,
+        N_new: Union[int, List[int]] = None,
+    ) -> TensorTrainDistribution:
+        """Adapts the grid do be a minimal interval containing `interval_prob` of the distribution in each direction. Returns the distribution, obtained by a linear interpolation of the distribution to the new grid (a TT with same ranks).
+
+        Args:
+            interval_prob : the fraction (from `0` to `1.0`) of the distribution
+            N_new : number of nodes in the new grid
+
+        Returns:
+            TensorTrainDistribution: a new distribution
+
+        """
+        grid_new = self.adapt_grid(interval_prob, N_new)
         return self.interpolate(grid_new)
+
+    def adapt_by_gaussian(
+        self: rJKOtt.TensorTrainDistribution,
+        interval_prob: np.float64 = 0.997,
+        N_new=None,
+        return_params:bool = False
+    ):
+        """Adapts the grid do be a minimal interval containing `interval_prob` of the distribution in each direction. 
+        Returns a new distribution, which is a product of independent Gaussians, with same mean and covariance in each direction
+
+        Args:
+            interval_prob : the fraction (from `0` to `1.0`) of the distribution
+            N_new : number of nodes in the new grid
+            return_params: if `True`, return also mean and sigmas of the new distribution
+
+        Returns:
+            TensorTrainDistribution: a new distribution
+
+        """
+        grid_new = self.adapt_grid(interval_prob, N_new)
+        means = []
+        sigmas = []
+        for i in range(self.dim):
+            rho_1d = self.get_marginal_on_grid(i)
+            x_1d = self.grid.get_1d_grid(i)
+            m = (rho_1d * x_1d).sum() / rho_1d.sum()
+            cov = (rho_1d * (x_1d - m)**2).sum() / rho_1d.sum()
+
+            means.append(m)
+            sigmas.append(cov**0.5)
+
+        distr_new = TensorTrainDistribution.gaussian(grid_new, means, sigmas)
+        if return_params:
+            return distr_new, np.array(means), np.array(sigmas)
+        return distr_new
 
     @classmethod
     def rank1_fx(
@@ -922,7 +985,7 @@ class TensorTrainDistribution(DistributionOnGrid):
 
         .. math::
 
-            x_i \sim \\mathcal{N}(m_i, \\sigma_i),\\ i = \\overline{1,\\ d}
+            x_i \\sim \\mathcal{N}(m_i, \\sigma_i),\\ i = \\overline{1,\\ d}
 
         Args:
             grid: the grid to discretize on
