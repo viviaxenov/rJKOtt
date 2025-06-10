@@ -79,6 +79,12 @@ def _solve_heat_TT(
 
     return [np.einsum("ij,kjl->kil", U, v) for U, v in zip(mat_exps, eta)]
 
+    def _gauge_potentials(eta, hat_eta,):
+        n_eta = teneva.sum(eta_next)
+        n_hat_eta = teneva.sum(hat_eta_next)
+        C = np.sqrt(n_hat_eta / n_eta)
+        eta_next = teneva.mul(C, eta_next)
+        hat_eta_next = teneva.mul(1.0 / C, hat_eta_next)
 
 def _fixed_point_picard(
     x_cur: tt_vector,
@@ -88,6 +94,8 @@ def _fixed_point_picard(
     max_rank: int = 10,
     trunc_tol: float = 1e-16,
 ) -> Tuple[tt_vector, np.float64]:
+    """TODO
+    """
     if relaxation == 1.0:
         # teneva.[add|add_many] may cause memory leaks;
         return g_cur, relaxation
@@ -100,6 +108,20 @@ def _fixed_point_picard(
     )
 
     return x_new, relaxation
+
+def _scale_stabilize_potentials(eta: tt_vector, hat_eta: tt_vector):
+    """Remove ambiguity in definition of the entropic potentials by making their average equal (for numerical stability)
+    """
+    n_eta = teneva.sum(eta)
+    n_hat_eta = teneva.sum(hat_eta)
+    C = np.sqrt(n_hat_eta / n_eta)
+    dim = len(eta)
+    c = C**(1./dim)
+
+    eta = [_core * c for _core in eta]
+    hat_eta = [_core / c for _core in hat_eta]
+
+    return eta, hat_eta
 
 
 def _fixed_point_aitken(
@@ -151,11 +173,13 @@ def _fixed_point_2_anderson(
         )
         return x_new, relaxation
     alpha = nom / denom
-    alpha = np.clip(alpha, 0.0, 2.0)
+    # alpha = np.clip(alpha, 0.0, 2.0)
 
     print(f"\tAnderson step with {alpha=:.3e}", flush=True)
 
     # TODO: ugly! write conveniece teneva lincomb?
+    # TODO: if alpha = 0. then this causes an "Eigenvalues did not converge" error in first trunk. 
+    # How to fix?
     x_new = teneva.add_many(
         [
             teneva.mul(alpha * relaxation, g_cur),
@@ -558,6 +582,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         )
         return eta
 
+
     def _fixed_point_inner_cycle(
         self,
         eta: tt_vector,
@@ -587,12 +612,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             eta_initial=start_value_term,
         )
 
-        n_eta = teneva.sum(eta_next)
-        n_hat_eta = teneva.sum(hat_eta_next)
-
-        C = np.sqrt(n_hat_eta / n_eta)
-        eta_next = teneva.mul(C, eta_next)
-        hat_eta_next = teneva.mul(1.0 / C, hat_eta_next)
+        eta_next, hat_eta_next = _scale_stabilize_potentials(eta_next, hat_eta_next)
 
         return eta_next, hat_eta_next, eta_t0, hat_eta_t0
 
@@ -926,7 +946,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                     [t_start_ode, t_stop_ode],
                     init_val_ode,
                     first_step=T_cur * 1e-4,
-                    min_step=T_cur * 1e-2,
+                    min_step=T_cur * 1e-3,
                     rtol=self.params.sampling_ode_rtol,
                     atol=self.params.sampling_ode_atol,
                     method='RK45',
@@ -941,7 +961,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                     2.0 * beta_cur * tau_em
                 ) * np.random.randn(*x_cur.shape)
                 t_cur += tau_em
-            x_cur = self.grid.clip_sample(x_cur)
+                x_cur = self.grid.clip_sample(x_cur)
         return x_cur
 
     def get_current_distribution(
