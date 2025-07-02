@@ -79,12 +79,6 @@ def _solve_heat_TT(
 
     return [np.einsum("ij,kjl->kil", U, v) for U, v in zip(mat_exps, eta)]
 
-    def _gauge_potentials(eta, hat_eta,):
-        n_eta = teneva.sum(eta_next)
-        n_hat_eta = teneva.sum(hat_eta_next)
-        C = np.sqrt(n_hat_eta / n_eta)
-        eta_next = teneva.mul(C, eta_next)
-        hat_eta_next = teneva.mul(1.0 / C, hat_eta_next)
 
 def _fixed_point_picard(
     x_cur: tt_vector,
@@ -116,10 +110,12 @@ def _scale_stabilize_potentials(eta: tt_vector, hat_eta: tt_vector):
     n_hat_eta = teneva.sum(hat_eta)
     C = np.sqrt(n_hat_eta / n_eta)
     dim = len(eta)
-    c = C**(1./dim)
 
-    eta = [_core * c for _core in eta]
-    hat_eta = [_core / c for _core in hat_eta]
+    if C > 0.:
+        # print(C)
+        c = C**(1./dim)
+        eta = [_core * c for _core in eta]
+        hat_eta = [_core / c for _core in hat_eta]
 
     return eta, hat_eta
 
@@ -592,10 +588,6 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         start_value_term: tt_vector = None,
     ):
         """The operator for the fixed point iteration.
-
-        Args:
-            eta:
-
         """
         eta_t0 = _solve_heat_TT(eta, -beta, -T, self.grid)  # (4.5.2)
 
@@ -952,6 +944,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                     method='RK45',
                 )
                 x_cur = ode_result.y[:, -1].reshape(old_shape)
+                x_cur = self.grid.clip_sample(x_cur)
 
             # Do Euler-Maruyama steps
             t_cur = t_stop_ode

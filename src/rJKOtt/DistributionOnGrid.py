@@ -928,16 +928,18 @@ class TensorTrainDistribution(DistributionOnGrid):
 
         """
         grid_new = self.adapt_grid(interval_prob, N_new)
-        means = []
-        sigmas = []
-        for i in range(self.dim):
-            rho_1d = self.get_marginal_on_grid(i)
-            x_1d = self.grid.get_1d_grid(i)
-            m = (rho_1d * x_1d).sum() / rho_1d.sum()
-            cov = (rho_1d * (x_1d - m)**2).sum() / rho_1d.sum()
+        lower, upper, _ = grid_new
+        means = (lower + upper)/2.
+        sigmas = (upper - lower)/6.
+        # for i in range(self.dim):
+        #     rho_1d = self.get_marginal_on_grid(i)
+        #     rho_1d = np.maximum(0., rho_1d)
+        #     x_1d = self.grid.get_1d_grid(i)
+        #     m = (rho_1d * x_1d).sum() / rho_1d.sum()
+        #     cov = (rho_1d * (x_1d - m)**2).sum() / rho_1d.sum()
 
-            means.append(m)
-            sigmas.append(cov**0.5)
+        #     means.append(m)
+        #     sigmas.append(cov**0.5)
 
         distr_new = TensorTrainDistribution.gaussian(grid_new, means, sigmas)
         if return_params:
