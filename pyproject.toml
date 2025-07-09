@@ -11,7 +11,7 @@ readme = 'README.md'
 version = "0.1"
 requires-python = ">= 3.8"
 dependencies = [
-    "numpy == 1.26",
+    "numpy",
     "docstring-inheritance", 
     "numba >= 0.59.1",
     "teneva >= 0.14.8", 
@@ -19,7 +19,8 @@ dependencies = [
 ]
 
 [project.optional-dependencies]
-extra = [
+manuscript = [
+    "matplotlib",
     "emcee >= 3.1.6", 
     "geomloss >= 0.2.6", 
     "h5py >= 3.11.0", 
@@ -27,4 +28,5 @@ extra = [
     "pandas >= 2.1.4", 
     "POT >= 0.9.3", 
     "torch >= 2.2.2", 
+    "arviz"
 ]
