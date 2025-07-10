@@ -41,16 +41,20 @@ class Grid:
         N_nodes: Union[int, List[int]],
         dim: int = 1,
     ):
+
         if isinstance(N_nodes, Iterable):
             dim = len(N_nodes)
-        elif isinstance(N_nodes, int):
+        elif isinstance(left, Iterable):
+            dim = len(left)
+        elif isinstance(right, Iterable):
+            dim = len(right)
+        else:
+            assert dim > 1
+
+        if isinstance(N_nodes, int):
             N_nodes = [
                 N_nodes,
             ] * dim
-        else:
-            raise RuntimeError(
-                f"Type of N_nodes should be int ot Iterable[int], got {type(N_nodes)}"
-            )
 
         if isinstance(left, float):
             left = [
@@ -64,6 +68,7 @@ class Grid:
 
         assert len(left) == dim
         assert len(right) == dim
+        assert len(N_nodes) == dim
 
         self.dim = dim
         self.left = np.array(left)

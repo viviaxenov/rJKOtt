@@ -15,7 +15,7 @@ import matplotlib.pyplot as plt
 from time import perf_counter
 
 from .utility import tt_sum_multi_axis, tt_slice, tt_vector
-from .DistributionOnGrid import Grid, TensorTrainDistribution, tt_on_grid_grad_of_log
+from .DistributionOnGrid import *
 
 
 @cache
@@ -88,8 +88,7 @@ def _fixed_point_picard(
     max_rank: int = 10,
     trunc_tol: float = 1e-16,
 ) -> Tuple[tt_vector, np.float64]:
-    """TODO
-    """
+    """TODO"""
     if relaxation == 1.0:
         # teneva.[add|add_many] may cause memory leaks;
         return g_cur, relaxation
@@ -103,17 +102,17 @@ def _fixed_point_picard(
 
     return x_new, relaxation
 
+
 def _scale_stabilize_potentials(eta: tt_vector, hat_eta: tt_vector):
-    """Remove ambiguity in definition of the entropic potentials by making their average equal (for numerical stability)
-    """
+    """Remove ambiguity in definition of the entropic potentials by making their average equal (for numerical stability)"""
     n_eta = teneva.sum(eta)
     n_hat_eta = teneva.sum(hat_eta)
     C = np.sqrt(n_hat_eta / n_eta)
     dim = len(eta)
 
-    if C > 0.:
+    if C > 0.0:
         # print(C)
-        c = C**(1./dim)
+        c = C ** (1.0 / dim)
         eta = [_core * c for _core in eta]
         hat_eta = [_core / c for _core in hat_eta]
 
@@ -174,7 +173,7 @@ def _fixed_point_2_anderson(
     print(f"\tAnderson step with {alpha=:.3e}", flush=True)
 
     # TODO: ugly! write conveniece teneva lincomb?
-    # TODO: if alpha = 0. then this causes an "Eigenvalues did not converge" error in first trunk. 
+    # TODO: if alpha = 0. then this causes an "Eigenvalues did not converge" error in first trunk.
     # How to fix?
     x_new = teneva.add_many(
         [
@@ -295,12 +294,29 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         rho_start: TensorTrainDistribution,
         solver_params: TensorTrainSolverParams = None,
         posterior_cache_size: int = int(1e6),
+        precondition_matrix: np.ndarray = None,
+        precondition_vector: np.ndarray = None,
     ):
         if solver_params is None:
             solver_params = TensorTrainSolverParams()  # default params
-        self._rho_infty = rho_infty
         self.grid = rho_start.grid
         self.params = solver_params
+
+        if precondition_vector is not None:
+            assert precondition_vector.shape == (self.grid.dim,)
+            self._m_pc = precondition_vector.copy()
+        else:
+            self._m_pc = np.zeros(self.grid.dim)
+
+        if precondition_matrix is not None:
+            assert precondition_matrix.shape == (self.grid.dim, self.grid.dim)
+            self._A_pc = precondition_matrix.copy()
+        else:
+            self._A_pc = np.eye(self.grid.dim)
+
+        self._rho_infty = lambda _x: rho_infty(
+            np.einsum("ij,kj->ki", self._A_pc, _x) + self._m_pc[np.newaxis, :]
+        )
 
         # Cache-related stuff
         self.posterior_cache_max_size = posterior_cache_size
@@ -323,10 +339,18 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             rho_start.rho_tt
         )
 
+    @property
+    def pc(self) -> Tuple[np.array, np.array]:
+        return self._A_pc, self._m_pc
+
     def _init_potentials(
         self,
         rho_0: tt_vector,
-    ) -> Tuple[tt_vector, tt_vector, tt_vector,]:
+    ) -> Tuple[
+        tt_vector,
+        tt_vector,
+        tt_vector,
+    ]:
         eta = teneva.cross(
             lambda _I: np.sqrt(
                 np.maximum(
@@ -578,7 +602,6 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         )
         return eta
 
-
     def _fixed_point_inner_cycle(
         self,
         eta: tt_vector,
@@ -587,8 +610,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         start_value_init: tt_vector = None,
         start_value_term: tt_vector = None,
     ):
-        """The operator for the fixed point iteration.
-        """
+        """The operator for the fixed point iteration."""
         eta_t0 = _solve_heat_TT(eta, -beta, -T, self.grid)  # (4.5.2)
 
         hat_eta_t0 = self._solve_initial_condition(
@@ -899,7 +921,8 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
     def sample(
         self,
-        sample_x0: np.ndarray,
+        sample_x0: np.ndarray = None,
+        N_samples: int = 100,
     ) -> np.ndarray:
         """Starting from the sample from the initial distribution, propagate it through the fitted dynamics and return a sample from the distribution on the last step.
 
@@ -909,6 +932,13 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         Returns:
             np.ndarray : sample from the distribution of the last step
         """
+        if sample_x0 is None:
+            l, r, _ = self.grid
+            mean = (r + l) / 2.0
+            sigma = (r - l) / 6.0
+            Z = np.random.randn(N_samples, self.grid.dim)
+            sample_x0 = sigma[np.newaxis, :] * Z + mean[np.newaxis, :]
+
         x_cur = sample_x0.copy()
         x_cur = self.grid.clip_sample(x_cur)
         dim = sample_x0.shape[-1]
@@ -932,7 +962,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             t_start_ode = 0.0
             t_stop_ode = (1.0 - eps_split) * T_cur
 
-            if eps_split < 1.:
+            if eps_split < 1.0:
                 ode_result = solve_ivp(
                     rhs_ode,
                     [t_start_ode, t_stop_ode],
@@ -941,7 +971,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                     min_step=T_cur * 1e-3,
                     rtol=self.params.sampling_ode_rtol,
                     atol=self.params.sampling_ode_atol,
-                    method='RK45',
+                    method="RK45",
                 )
                 x_cur = ode_result.y[:, -1].reshape(old_shape)
                 x_cur = self.grid.clip_sample(x_cur)
@@ -955,6 +985,8 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                 ) * np.random.randn(*x_cur.shape)
                 t_cur += tau_em
                 x_cur = self.grid.clip_sample(x_cur)
+
+        x_cur = np.einsum("ij,kj->ki", self._A_pc, x_cur) + self._m_pc[np.newaxis, :]
         return x_cur
 
     def get_current_distribution(
@@ -972,3 +1004,47 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         hat_eta = _solve_heat_TT(hat_eta_t0, beta, t, self.grid)
         eta = _solve_heat_TT(eta_t1, beta, T - t, self.grid)
         return TensorTrainDistribution(self.grid, teneva.mul(hat_eta, eta))
+
+    def preconditioned_from_sample(
+        sample: np.ndarray,
+        rho_infty: Callable,
+        N_grid: Union[int, List[int]] = 50,
+        solver_params: TensorTrainSolverParams = None,
+        posterior_cache_size: int = int(1e6),
+        bound_extend: np.float64 = 0.2,
+    ):
+
+        precondition_vector = sample.mean(axis=0)
+        cov = np.cov(sample, rowvar=False)
+
+        assert(np.allclose(cov, cov.T))
+        U, S, V = np.linalg.svd(cov, hermitian=True)
+        S = np.maximum(S, 1e-10)
+        precondition_matrix = (U * S**0.5) @ V
+        pc_sq_inv = (U * S ** (-0.5)) @ V
+
+        print(U.shape, S.shape, V.shape)
+
+        sample_centered = sample - precondition_vector
+        pc_sample = np.einsum("ij,kj->ki", pc_sq_inv, sample_centered)
+
+        l = np.min(pc_sample, axis=0)
+        r = np.max(pc_sample, axis=0)
+
+        pad = (r - l) * bound_extend
+
+        l -= pad
+        r += pad
+
+        grid = Grid(l, r, N_grid)
+
+        tt_init = TensorTrainDistribution.gaussian(grid, (l + r) / 2.0, (r - l) / 6.0)
+
+        return TensorTrainSolver(
+            rho_infty,
+            tt_init,
+            solver_params,
+            posterior_cache_size,
+            precondition_matrix=precondition_matrix,
+            precondition_vector=precondition_vector,
+        )
