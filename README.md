@@ -21,4 +21,4 @@ pip install --upgrade rJKOtt@git+https://github.com/viviaxenov/rJKOtt
   - An [example](https://viviaxenov.github.io/rJKOtt/_include/notebooks/ex_sampling.html) with explanation of basic theory
   - Tests  &ndash; TBD
 ## Citation
-Aksenov, Vitalii, and Martin Eigel. "An Eulerian approach to regularized JKO scheme with low-rank tensor decompositions for Bayesian inversion." [arXiv preprint arXiv:2411.12430](https://arxiv.org/abs/2411.12430) (2024).
+Aksenov, Vitalii, and Martin Eigel. "An Eulerian approach to regularized JKO scheme with low-rank tensor decompositions for Bayesian inversion." Journal of Scientific Computing 105.1 (2025): 3.
