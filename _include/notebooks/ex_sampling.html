@@ -1,0 +1,683 @@
+
+
+<!DOCTYPE html>
+<html class="writer-html5" lang="en" data-content_root="../../">
+<head>
+  <meta charset="utf-8" /><meta name="viewport" content="width=device-width, initial-scale=1" />
+
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Modelling distributions with regularized JKO scheme and tensor-train decomposition &mdash; rJKOtt  documentation</title>
+      <link rel="stylesheet" type="text/css" href="../../_static/pygments.css?v=b86133f3" />
+      <link rel="stylesheet" type="text/css" href="../../_static/css/theme.css?v=e59714d7" />
+      <link rel="stylesheet" type="text/css" href="../../_static/nbsphinx-code-cells.css?v=2aa19091" />
+
+  
+      <script src="../../_static/jquery.js?v=5d32c60e"></script>
+      <script src="../../_static/_sphinx_javascript_frameworks_compat.js?v=2cd50e6c"></script>
+      <script src="../../_static/documentation_options.js?v=5929fcd5"></script>
+      <script src="../../_static/doctools.js?v=9bcbadda"></script>
+      <script src="../../_static/sphinx_highlight.js?v=dc90522c"></script>
+      <script crossorigin="anonymous" integrity="sha256-Ae2Vz/4ePdIu6ZyI/5ZGsYnb+m0JlOmKPjt6XZ9JJkA=" src="https://cdnjs.cloudflare.com/ajax/libs/require.js/2.3.4/require.min.js"></script>
+      <script>window.MathJax = {"tex": {"inlineMath": [["$", "$"], ["\\(", "\\)"]], "processEscapes": true}, "options": {"ignoreHtmlClass": "tex2jax_ignore|mathjax_ignore|document", "processHtmlClass": "tex2jax_process|mathjax_process|math|output_area"}}</script>
+      <script defer="defer" src="https://cdn.jsdelivr.net/npm/mathjax@3/es5/tex-mml-chtml.js"></script>
+    <script src="../../_static/js/theme.js"></script>
+    <link rel="index" title="Index" href="../../genindex.html" />
+    <link rel="search" title="Search" href="../../search.html" />
+    <link rel="prev" title="Examples" href="../examples.html" /> 
+</head>
+
+<body class="wy-body-for-nav"> 
+  <div class="wy-grid-for-nav">
+    <nav data-toggle="wy-nav-shift" class="wy-nav-side">
+      <div class="wy-side-scroll">
+        <div class="wy-side-nav-search" >
+
+          
+          
+          <a href="../../index.html" class="icon icon-home">
+            rJKOtt
+          </a>
+<div role="search">
+  <form id="rtd-search-form" class="wy-form" action="../../search.html" method="get">
+    <input type="text" name="q" placeholder="Search docs" aria-label="Search docs" />
+    <input type="hidden" name="check_keywords" value="yes" />
+    <input type="hidden" name="area" value="default" />
+  </form>
+</div>
+        </div><div class="wy-menu wy-menu-vertical" data-spy="affix" role="navigation" aria-label="Navigation menu">
+              <p class="caption" role="heading"><span class="caption-text">Contents:</span></p>
+<ul class="current">
+<li class="toctree-l1"><a class="reference internal" href="../../modules.html">rJKOtt</a></li>
+<li class="toctree-l1 current"><a class="reference internal" href="../examples.html">Examples</a><ul class="current">
+<li class="toctree-l2 current"><a class="current reference internal" href="#"> Sampling from test distributions</a><ul>
+<li class="toctree-l3"><a class="reference internal" href="#Entropy-regularized-JKO-scheme">Entropy regularized JKO scheme</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Tensor-Train-decomposition">Tensor-Train decomposition</a></li>
+<li class="toctree-l3"><a class="reference internal" href="#Solver">Solver</a><ul>
+<li class="toctree-l4"><a class="reference internal" href="#Target-distribution">Target distribution</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Initial-distribution">Initial distribution</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#The-solver">The solver</a></li>
+<li class="toctree-l4"><a class="reference internal" href="#Sampling">Sampling</a></li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+</li>
+</ul>
+
+        </div>
+      </div>
+    </nav>
+
+    <section data-toggle="wy-nav-shift" class="wy-nav-content-wrap"><nav class="wy-nav-top" aria-label="Mobile navigation menu" >
+          <i data-toggle="wy-nav-top" class="fa fa-bars"></i>
+          <a href="../../index.html">rJKOtt</a>
+      </nav>
+
+      <div class="wy-nav-content">
+        <div class="rst-content">
+          <div role="navigation" aria-label="Page navigation">
+  <ul class="wy-breadcrumbs">
+      <li><a href="../../index.html" class="icon icon-home" aria-label="Home"></a></li>
+          <li class="breadcrumb-item"><a href="../examples.html">Examples</a></li>
+      <li class="breadcrumb-item active">Modelling distributions with regularized JKO scheme and tensor-train decomposition</li>
+      <li class="wy-breadcrumbs-aside">
+            <a href="../../_sources/_include/notebooks/ex_sampling.ipynb.txt" rel="nofollow"> View page source</a>
+      </li>
+  </ul>
+  <hr/>
+</div>
+          <div role="main" class="document" itemscope="itemscope" itemtype="http://schema.org/Article">
+           <div itemprop="articleBody">
+             
+  <section id="Modelling-distributions-with-regularized-JKO-scheme-and-tensor-train-decomposition">
+<h1>Modelling distributions with regularized JKO scheme and tensor-train decomposition<a class="headerlink" href="#Modelling-distributions-with-regularized-JKO-scheme-and-tensor-train-decomposition" title="Link to this heading"></a></h1>
+<p>This notebook summarizes the main principles of the method and demonstrates the application of the code.</p>
+<section id="Entropy-regularized-JKO-scheme">
+<h2>Entropy regularized JKO scheme<a class="headerlink" href="#Entropy-regularized-JKO-scheme" title="Link to this heading"></a></h2>
+<p>The idea of the method is to construct a sequence of measures <span class="math notranslate nohighlight">\(\rho^k\)</span>, that successively minimize the <span class="math notranslate nohighlight">\(\operatorname{KL(\rho^k|\rho^\infty)}\)</span> between the current estimate and the posterior distribution <span class="math notranslate nohighlight">\(\rho^\infty\)</span>. We also introduce a dynamic that interpolates between the intermediate steps, and will give us an algorithm to produce samples.</p>
+<p><span class="math">\begin{align}
+\rho^{k+1} =  \arg\min\limits_{v,\rho }\int\limits_0^T\int\limits_X {\frac{1}{2}\|v(t,x)\|^2}{\rho(t, x)}\mathrm{d}x\mathrm{d}t &+ \operatorname{KL}(\rho(T,\cdot) | \rho^\infty) \\
+\partial_t \rho + \nabla(\rho v) &= \beta\operatorname{\Delta}\rho \\
+\rho(0, x) &= \rho^{k}(x) \\
+\rho(T, x) &:= \rho^{k+1}(x)
+\end{align}</span></p>
+<p>In this PDE-constrained minimization problem, the <span class="math notranslate nohighlight">\(\operatorname{KL(\rho^k|\rho^\infty)}\)</span> term penalizes the dissimilarity to the posterior, and the integral provides that the next step is not too far from the current. The constraint of the Fokker-Planck equation is defining the interpolating dynamics. The dynamic can be equivalently written as an SDE:</p>
+<p><span class="math">\begin{align}
+\mathrm{d}X_t &= v(t, X_t)\mathrm{d}t + \sqrt{2\beta}\mathrm{d}W_t \\
+X_0 &\sim \rho^k
+\end{align}</span></p>
+<p>or as an ODE:</p>
+<p><span class="math">\begin{align}
+\dot X(t) &= \tilde{v}(t, x(t)) \\
+\tilde{v}(t, x) &:= v(t, x) - \beta\nabla\log\rho(t, x)
+\end{align}</span></p>
+<p>So, if the solution <span class="math notranslate nohighlight">\(\rho,v\)</span> is known, one can use this to transform a sample from <span class="math notranslate nohighlight">\(\rho^k\)</span> to a sample from <span class="math notranslate nohighlight">\(\rho^{k+1}\)</span>, by solving one of these equations.</p>
+<p>The important parameters are the timestep <span class="math notranslate nohighlight">\(T &gt; 0\)</span> and the regularization factor <span class="math notranslate nohighlight">\(\beta &gt; 0\)</span>.</p>
+</section>
+<section id="Tensor-Train-decomposition">
+<h2>Tensor-Train decomposition<a class="headerlink" href="#Tensor-Train-decomposition" title="Link to this heading"></a></h2>
+<p>The idea of the package is to use a discretization on the grid. This wouldn’t normally be possible in a dimension <span class="math notranslate nohighlight">\(&gt;3\)</span>, but we use a Tensor-Train decomposition to compress the data.</p>
+<p>In TT format, a tensor <span class="math notranslate nohighlight">\(A \in \mathbb{R}^{N_1 \times \cdots \times N_d}\)</span> is (approximately) represented as:</p>
+<div class="math notranslate nohighlight">
+\[A_{i_1\cdots i_d} \approx A^1_{i_1 r_1} A^2_{r_1 i_2 r_2} \cdots A^d_{r_{d-1}i_d}\]</div>
+<p>with 3-tensors <span class="math notranslate nohighlight">\(A^k \in \mathbb{R}^{r_{k-1} \times i_k \times r_k}\)</span> called the components, <span class="math notranslate nohighlight">\(r_k\)</span> ranks and $r = <span class="math">\max</span>_k r_k, $ being the rank of the Tensor Train. Certain structured data can be represented with Tensor Train of low rank, allowing to significantly reduce the storage cost (<span class="math notranslate nohighlight">\(O(dNr^2)\)</span> versus <span class="math notranslate nohighlight">\(O(N^d)\)</span> for the full tensor). Some of the linear algebra operations can be performed in the low rank format. The cross-approximation algorithm allows to
+construct a low-rank approximation to a tensor by accessing its values only for a smaller set of indices, which is useful to reconstruct functionally-defined tensors.</p>
+</section>
+<section id="Solver">
+<h2>Solver<a class="headerlink" href="#Solver" title="Link to this heading"></a></h2>
+<p>Let’s try the method out!</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[1]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="c1"># TODO: proper installation, remove this...</span>
+
+<span class="kn">import</span><span class="w"> </span><span class="nn">sys</span>
+
+<span class="n">sys</span><span class="o">.</span><span class="n">path</span><span class="o">.</span><span class="n">append</span><span class="p">(</span><span class="s2">&quot;../../../src/&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[2]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">rJKOtt</span><span class="w"> </span><span class="kn">import</span> <span class="o">*</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">rJKOtt.utility</span><span class="w"> </span><span class="kn">import</span> <span class="n">tt_independent_gaussians</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[3]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">numpy</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">np</span>
+<span class="kn">from</span><span class="w"> </span><span class="nn">scipy.stats</span><span class="w"> </span><span class="kn">import</span> <span class="n">uniform</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">matplotlib.pyplot</span><span class="w"> </span><span class="k">as</span><span class="w"> </span><span class="nn">plt</span>
+
+<span class="o">%</span><span class="k">matplotlib</span> inline
+<span class="kn">import</span><span class="w"> </span><span class="nn">teneva</span>
+</pre></div>
+</div>
+</div>
+<section id="Target-distribution">
+<h3>Target distribution<a class="headerlink" href="#Target-distribution" title="Link to this heading"></a></h3>
+<p>As a target for this test, we choose a Gaussian mixture distribution. Each component is a normal distribution <span class="math notranslate nohighlight">\(\mathcal{N}(m_i, \sigma I_d)\)</span> and they are mixed with equal weights, with <span class="math notranslate nohighlight">\(m_i\)</span> generated randomly. One also has to choose the bounds for the grid; in this example, it’s chosen so that the grid fits the <span class="math notranslate nohighlight">\(3\sigma\)</span> interval of each of the components of the mixture.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[4]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">N_comp</span> <span class="o">=</span> <span class="mi">5</span>
+<span class="n">dim</span> <span class="o">=</span> <span class="mi">6</span>
+<span class="n">L</span> <span class="o">=</span> <span class="mf">3.0</span>  <span class="c1"># Choose the grid bounds</span>
+<span class="n">N</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="mi">100</span><span class="p">,</span>
+<span class="p">]</span> <span class="o">*</span> <span class="n">dim</span>  <span class="c1"># Number of nodes in the grid; can be chosen independently in each direction, but we take uniforn</span>
+<span class="n">grid</span> <span class="o">=</span> <span class="n">Grid</span><span class="p">(</span><span class="o">-</span><span class="n">L</span><span class="p">,</span> <span class="n">L</span><span class="p">,</span> <span class="n">N</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>  <span class="c1"># Initialize the grid</span>
+<span class="n">means</span> <span class="o">=</span> <span class="n">uniform</span><span class="o">.</span><span class="n">rvs</span><span class="p">(</span><span class="n">loc</span><span class="o">=-</span><span class="n">L</span> <span class="o">/</span> <span class="mi">2</span><span class="p">,</span> <span class="n">scale</span><span class="o">=</span><span class="n">L</span> <span class="o">/</span> <span class="mi">1</span><span class="p">,</span> <span class="n">size</span><span class="o">=</span><span class="p">(</span><span class="n">N_comp</span><span class="p">,</span> <span class="n">dim</span><span class="p">),</span> <span class="n">random_state</span><span class="o">=</span><span class="mi">1</span><span class="p">)</span>
+<span class="n">sigma</span> <span class="o">=</span> <span class="mf">0.5</span>
+<span class="n">covariance</span> <span class="o">=</span> <span class="p">[</span>
+    <span class="n">np</span><span class="o">.</span><span class="n">eye</span><span class="p">(</span>
+        <span class="n">dim</span><span class="p">,</span>
+    <span class="p">)</span>
+    <span class="o">*</span> <span class="n">sigma</span><span class="o">**</span><span class="mi">2</span>
+<span class="p">]</span> <span class="o">*</span> <span class="n">N_comp</span>
+</pre></div>
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[5]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">gm</span> <span class="o">=</span> <span class="n">GaussianMixture</span><span class="p">(</span>
+    <span class="n">grid</span><span class="p">,</span>
+    <span class="n">means</span><span class="p">,</span>
+    <span class="n">covariance</span><span class="p">,</span>
+<span class="p">)</span>  <span class="c1"># Convenience class for</span>
+<span class="n">fig</span><span class="p">,</span> <span class="n">axs</span> <span class="o">=</span> <span class="n">gm</span><span class="o">.</span><span class="n">plot_matrix_marginals</span><span class="p">(</span>
+    <span class="n">sym</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">contour_kwargs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;Blues&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="n">plot_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="s2">&quot;tab:blue&quot;</span><span class="p">,</span> <span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="sa">r</span><span class="s2">&quot;$\rho_\infty$&quot;</span><span class="p">},</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../../_images/_include_notebooks_ex_sampling_6_0.png" src="../../_images/_include_notebooks_ex_sampling_6_0.png" />
+</div>
+</div>
+</section>
+<section id="Initial-distribution">
+<h3>Initial distribution<a class="headerlink" href="#Initial-distribution" title="Link to this heading"></a></h3>
+<p>As a starting distribution <span class="math notranslate nohighlight">\(\rho^0\)</span> we choose the Standart Normal (up to constraining it on the box defined by the bounds).</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[6]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">tt_init</span> <span class="o">=</span> <span class="n">TensorTrainDistribution</span><span class="o">.</span><span class="n">gaussian</span><span class="p">(</span><span class="n">grid</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>Let’s plot them together:</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">axs</span> <span class="o">=</span> <span class="n">tt_init</span><span class="o">.</span><span class="n">plot_matrix_marginals</span><span class="p">(</span>
+    <span class="n">axs</span><span class="o">=</span><span class="n">axs</span><span class="p">,</span>
+    <span class="n">contour_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;Oranges&quot;</span><span class="p">,</span> <span class="s2">&quot;linestyles&quot;</span><span class="p">:</span> <span class="s2">&quot;dashed&quot;</span><span class="p">,</span> <span class="s2">&quot;alpha&quot;</span><span class="p">:</span> <span class="mf">0.7</span><span class="p">},</span>
+    <span class="n">plot_kwargs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="s2">&quot;tab:orange&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="sa">r</span><span class="s2">&quot;$\rho^0$&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+<span class="p">)</span>
+<span class="n">axs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+<span class="n">fig</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[7]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<img alt="../../_images/_include_notebooks_ex_sampling_10_0.png" src="../../_images/_include_notebooks_ex_sampling_10_0.png" />
+</div>
+</div>
+</section>
+<section id="The-solver">
+<h3>The solver<a class="headerlink" href="#The-solver" title="Link to this heading"></a></h3>
+<p>For the discrete solution, the first-order optimality conditions are written and, with a change of variables, we arrive at the system of PDEs</p>
+<p><span class="math">\begin{align}
+\partial_t \hat{\eta} &= \beta\Delta\hat{\eta} \\
+\partial_t {\eta} &= -\beta\Delta\eta \\
+\hat\eta (0) &= \frac{\rho^k(x)}{\eta(0)}\\
+\eta(T) &= \left(\frac{\rho_\infty}{\hat\eta(T)} \right)^{\frac{1}{1 + 2\beta}}  \\
+\rho(t, x) &= \eta(t, x)\cdot \hat\eta(t, x),\\
+v(t, x) &= 2\beta\nabla\log\eta(t, x)
+\end{align}</span></p>
+<p>The variables <span class="math notranslate nohighlight">\(\eta, \hat\eta\)</span> are then represented on a grid. The finite-difference solution of the heat equations is computed efficiently by applying one-dimensional solution operators <span class="math notranslate nohighlight">\(e^{\beta T \Delta}\)</span> to the components of the tensor train. Given pointwise evaluations of one of the potentials. The initial and terminal conditions are satisfied approximately by reconstructing the right-hand sides with cross-approximation.</p>
+<p>During the cross-approximation of the terminal condition, the posterior is evaluated. In a practical Bayesian inversion application, this call invokes the computationally intensive forward model, so we suggest to cache these calls to save computational effort.</p>
+<p>Additional problem is the coupling of the system. For that, the fixed-point approach is used. Starting with the initial guess for one of the potentials <span class="math notranslate nohighlight">\(\eta\)</span>, we can compute the solution of the PDE, get the boundary value for the other potential <span class="math notranslate nohighlight">\(\hat\eta\)</span> from the BC, solve PDE again and, from the terminal condition get the value <span class="math notranslate nohighlight">\(\tilde\eta\)</span> that, for the coupled solution, should be equal to the initial guess.</p>
+<p>We reformulate the coupling problem as a fixed point problem for this operator, also represented as a cycle below:</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\Large
+\begin{CD}
+\eta_{m, 0}           &#64;&lt;{e^{\beta T \Delta}\cdot }&lt;&lt;    \eta_{m, T} \\
+&#64;V{\hat\eta_{m, 0}} = \frac{\rho^k}{\eta_{m,0}}VV             &#64;AA{\tilde\eta_{m, T} = \left(\frac{\rho_\infty}{\hat\eta_{m, T}} \right)^{\frac{1}{1 + 2\beta}}
+}A \\
+\hat\eta_{m, 0}        &#64;&gt;&gt;{e^{\beta T \Delta}\cdot }&gt;     \hat\eta_{m, T}
+\end{CD}\end{split}\]</div>
+<p>The most basic approach would be Picard iteration, i.e. iterating the cycle over and over, taking <span class="math notranslate nohighlight">\(\eta_{m+1} = \tilde\eta_{m}\)</span>. It is, however, slow, so we implement Anderson’s acceleration scheme.</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[8]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">rJKOtt.TensorTrainSolver</span>
+
+<span class="n">solver</span> <span class="o">=</span> <span class="n">TensorTrainSolver</span><span class="p">(</span>
+    <span class="n">gm</span><span class="o">.</span><span class="n">density</span><span class="p">,</span>  <span class="c1"># The function x -&gt; rho_infty(x)</span>
+    <span class="n">tt_init</span><span class="p">,</span>  <span class="c1"># Info on the grid and the initial distribution (in TT)</span>
+    <span class="n">TensorTrainSolverParams</span><span class="p">(),</span>  <span class="c1"># Solver&#39;s parameters; for the most of them, defaults are OK</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>Unfortunately, at the current stage the solver has a lot of parameters that can’t be chosen automatically. For the most, defaults are ok, but we set the important ones below</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[9]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">max_rank</span> <span class="o">=</span> <span class="mi">5</span>  <span class="c1"># Max TT rank for all the represented variables</span>
+<span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">cross_validation_rtol</span> <span class="o">=</span> <span class="mf">1e-8</span>
+<span class="c1"># Early stopping criterion for the cross approximation</span>
+<span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">fp_stopping_rtol</span> <span class="o">=</span> <span class="mf">1e-8</span>
+<span class="c1"># Early stopping criterion for the fixed-point iterations. Set smaller in order to compute KL_est more accurately</span>
+<span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">fp_relaxation</span> <span class="o">=</span> <span class="mf">0.9</span>
+<span class="c1"># Relaxation factor for the fixed-point method. Default should be ok, make smaller if FP doesn&#39;t converge</span>
+</pre></div>
+</div>
+</div>
+<p>At least for the simple distributions without strong concentration, a good approximation can actually be obtained in one step. Regularization factor <span class="math notranslate nohighlight">\(\beta\)</span> controls the quality (increase to get a “blurrier” approximation). The time step <span class="math notranslate nohighlight">\(T\)</span> should be chosen large enough so that <span class="math notranslate nohighlight">\(\beta T \approx 1\dots100\)</span></p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[10]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">_</span><span class="p">,</span> <span class="n">rel_errors</span><span class="p">,</span> <span class="n">_</span><span class="p">,</span> <span class="n">_</span> <span class="o">=</span> <span class="n">solver</span><span class="o">.</span><span class="n">step</span><span class="p">(</span><span class="mf">1e-4</span><span class="p">,</span> <span class="mf">1e5</span><span class="p">,</span> <span class="n">save_history</span><span class="o">=</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+Initializing FP with method=2_anderson
+        Solving initial condition  ranks= [ 1  7  7  3  3  3  1] dt=2.95e-02 n_calls=   12800 stop_condition=&#39;e_vld&#39;
+        Rounding                   ranks= [ 1  1  1  1  1  1  1] dt=3.70e-03
+        Solving terminal condition
+</pre></div></div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/aksenov/miniconda3/envs/teneva_test/lib/python3.11/site-packages/scipy/sparse/linalg/_dsolve/linsolve.py:412: SparseEfficiencyWarning: splu converted its input to CSC format
+  warn(&#39;splu converted its input to CSC format&#39;, SparseEfficiencyWarning)
+/home/aksenov/miniconda3/envs/teneva_test/lib/python3.11/site-packages/scipy/sparse/linalg/_dsolve/linsolve.py:302: SparseEfficiencyWarning: spsolve is more efficient when sparse b is in the CSC matrix format
+  warn(&#39;spsolve is more efficient when sparse b &#39;
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+ranks= [ 1 16 16 13 13 13  1] dt=9.42e+00 n_calls=  383100 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.49e-03
+Starting FP step 1 rel_err inf
+        Solving initial condition  ranks= [ 1  7  7  3  3  3  1] dt=2.54e-02 n_calls=   12800 stop_condition=&#39;e_vld&#39;
+        Rounding                   ranks= [ 1  1  1  1  1  1  1] dt=8.94e-04
+        Solving terminal condition ranks= [ 1 16 16 13 13 13  1] dt=2.21e+00 n_calls=  383100 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.55e-03
+Starting FP step 2 rel_err 1.74e+01
+        Solving initial condition  ranks= [ 1  9  9  9  9  9  1] dt=2.36e-01 n_calls=  104000 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=4.53e-03
+        Solving terminal condition ranks= [ 1 16 16 13 13 13  1] dt=8.61e+00 n_calls=  383100 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.75e-03
+Starting FP step 3 rel_err 1.10e-01
+        Solving initial condition  ranks= [ 1  9  9  9  9  9  1] dt=1.74e-01 n_calls=   85600 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=2.29e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=9.33e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.39e-03
+        Anderson step with alpha=1.111e+00
+Starting FP step 4 rel_err 1.00e-02
+        Solving initial condition  ranks= [ 1  9  9  9  9  9  1] dt=1.32e-01 n_calls=   85600 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=2.67e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=2.30e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.75e-03
+        Anderson step with alpha=1.111e+00
+Starting FP step 5 rel_err 9.93e-04
+        Solving initial condition  ranks= [ 1  9  9  9  9  9  1] dt=2.20e-01 n_calls=   85600 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=5.08e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=2.75e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.02e-02
+        Anderson step with alpha=1.111e+00
+Starting FP step 6 rel_err 9.93e-05
+        Solving initial condition  ranks= [ 1  9  9  9  9  9  1] dt=1.87e-01 n_calls=   85600 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.63e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=5.05e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.25e-02
+        Anderson step with alpha=1.111e+00
+Starting FP step 7 rel_err 9.93e-06
+        Solving initial condition  ranks= [ 1  9  9  9  9  9  1] dt=5.09e-01 n_calls=   85600 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=8.19e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=6.04e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.37e-02
+        Anderson step with alpha=1.111e+00
+Starting FP step 8 rel_err 9.93e-07
+        Solving initial condition  ranks= [ 1  7  7  7  7  7  1] dt=1.24e-01 n_calls=   31200 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=8.32e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=3.67e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.18e-03
+        Anderson step with alpha=1.113e+00
+Starting FP step 9 rel_err 9.64e-08
+        Solving initial condition  ranks= [ 1  7  7  7  7  7  1] dt=1.02e-01 n_calls=   31200 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=3.00e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=3.73e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.07e-02
+        Anderson step with alpha=1.072e+00
+Starting FP step 10 rel_err 2.68e-08
+        Solving initial condition  ranks= [ 1  7  7  7  7  7  1] dt=5.38e-02 n_calls=   31200 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.89e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=2.93e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.29e-02
+Starting FP step 11 rel_err 1.47e-08
+        Solving initial condition  ranks= [ 1  7  7  7  7  7  1] dt=5.01e-02 n_calls=   31200 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.58e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=2.44e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=7.59e-03
+        Anderson step with alpha=5.151e-01
+Starting FP step 12 rel_err 2.55e-08
+        Solving initial condition  ranks= [ 1  7  7  7  7  7  1] dt=5.97e-02 n_calls=   31200 stop_condition=&#39;e&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=1.59e-03
+        Solving terminal condition ranks= [ 1 14 14 14 15 15  1] dt=2.63e+00 n_calls=  387500 stop_condition=&#39;m&#39;
+        Rounding                   ranks= [ 1  5  5  5  5  5  1] dt=5.60e-03
+Computing KL err
+Computing KL estimate
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[11]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="nb">print</span><span class="p">(</span>
+    <span class="sa">f</span><span class="s2">&quot;KL error (w. posterior calls): </span><span class="si">{</span><span class="n">solver</span><span class="o">.</span><span class="n">KLs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="se">\n</span><span class="s2">KL estimate (no posterior calls): </span><span class="si">{</span><span class="n">solver</span><span class="o">.</span><span class="n">KLs_est</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span>
+<span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+KL error (w. posterior calls): 0.00e+00
+KL estimate (no posterior calls): 9.49e-05
+</pre></div></div>
+</div>
+<p>One can study the convergence of the FP method</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[12]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">plot</span><span class="p">(</span><span class="n">rel_errors</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">yscale</span><span class="p">(</span><span class="s2">&quot;log&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">ylabel</span><span class="p">(</span><span class="sa">r</span><span class="s2">&quot;$\frac{\|\eta_m - \tilde\eta_m\|_2}{\|\eta_m\|_2}$&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">xlabel</span><span class="p">(</span><span class="s2">&quot;Iteration $m$&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">grid</span><span class="p">(</span><span class="kc">True</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../../_images/_include_notebooks_ex_sampling_19_0.png" src="../../_images/_include_notebooks_ex_sampling_19_0.png" />
+</div>
+</div>
+</section>
+<section id="Sampling">
+<h3>Sampling<a class="headerlink" href="#Sampling" title="Link to this heading"></a></h3>
+<p>With the converged soultion, the interpolating dynamics can be used to produce samples. In terms of the parameters, the SDE takes form</p>
+<div class="math notranslate nohighlight">
+\[\begin{split}\begin{align}
+\mathrm{d}X_t &amp;= 2\beta\nabla\log\eta(t, X_t)\ \mathrm{d}t + \sqrt{2\beta}\mathrm{d}W_t \\
+X_0 &amp;\sim \rho^k
+\end{align}\end{split}\]</div>
+<p>and the ODE:</p>
+<div class="math notranslate nohighlight">
+\[\dot{x}(t) = \beta\nabla\left(\log\eta(t, x(t)) - \log\hat\eta(t, x(t))\right)\]</div>
+<p>Using ODE is more advantageous due to existence of methods with high order and adaptive choice of step size. However, in the current application, the ODE becomes stiff towards the time interval, and the solution exhibits numerical artefacts. Our solution is for each timestep to run the ODE dynamic for the time <span class="math notranslate nohighlight">\(T(1 - \varepsilon)\)</span> (approximately with RK45) and for the last <span class="math notranslate nohighlight">\(T\varepsilon\)</span> use the SDE dynamic (with Euler-Maruyama).</p>
+<div class="nbinput nblast docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[13]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">x0</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="mi">300</span><span class="p">,</span> <span class="n">dim</span><span class="p">)</span>
+
+<span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">sampling_sde_fraction</span> <span class="o">=</span> <span class="mf">1e-3</span>
+<span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">sampling_n_euler_maruyama_steps</span> <span class="o">=</span> <span class="mi">50</span>
+
+<span class="n">sample_tt</span> <span class="o">=</span> <span class="n">solver</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">x0</span><span class="p">)</span>
+<span class="n">sample_ref</span> <span class="o">=</span> <span class="n">gm</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="mi">300</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<p>When the sample is ready, let’s plot the result (marginals of two parameters, not of all for better visibility)</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">fig</span><span class="p">,</span> <span class="n">axs</span> <span class="o">=</span> <span class="n">gm</span><span class="o">.</span><span class="n">plot_matrix_marginals</span><span class="p">(</span>
+    <span class="n">sym</span><span class="o">=</span><span class="kc">True</span><span class="p">,</span>
+    <span class="n">sample</span><span class="o">=</span><span class="n">sample_ref</span><span class="p">,</span>
+    <span class="n">scatter_args</span><span class="o">=</span><span class="p">[</span><span class="mf">0.2</span><span class="p">],</span>
+    <span class="n">scatter_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;c&quot;</span><span class="p">:</span> <span class="s2">&quot;tab:blue&quot;</span><span class="p">},</span>
+    <span class="n">contour_kwargs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;Blues&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="n">plot_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="s2">&quot;tab:blue&quot;</span><span class="p">,</span> <span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="sa">r</span><span class="s2">&quot;$\rho_\infty$&quot;</span><span class="p">},</span>
+<span class="p">)</span>
+
+
+<span class="n">tt_distr</span> <span class="o">=</span> <span class="n">solver</span><span class="o">.</span><span class="n">get_current_distribution</span><span class="p">()</span>
+<span class="n">tt_distr</span><span class="o">.</span><span class="n">plot_matrix_marginals</span><span class="p">(</span>
+    <span class="n">axs</span><span class="o">=</span><span class="n">axs</span><span class="p">,</span>
+    <span class="n">sample</span><span class="o">=</span><span class="n">sample_tt</span><span class="p">,</span>
+    <span class="n">scatter_args</span><span class="o">=</span><span class="p">[</span><span class="mf">0.2</span><span class="p">],</span>
+    <span class="n">scatter_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="s2">&quot;tab:orange&quot;</span><span class="p">},</span>
+    <span class="n">contour_kwargs</span><span class="o">=</span><span class="p">{</span>
+        <span class="s2">&quot;cmap&quot;</span><span class="p">:</span> <span class="s2">&quot;Oranges&quot;</span><span class="p">,</span>
+        <span class="s2">&quot;linestyles&quot;</span><span class="p">:</span> <span class="s2">&quot;dashed&quot;</span><span class="p">,</span>
+    <span class="p">},</span>
+    <span class="n">plot_kwargs</span><span class="o">=</span><span class="p">{</span><span class="s2">&quot;color&quot;</span><span class="p">:</span> <span class="s2">&quot;tab:orange&quot;</span><span class="p">,</span> <span class="s2">&quot;label&quot;</span><span class="p">:</span> <span class="sa">r</span><span class="s2">&quot;$\rho_</span><span class="si">{TT}</span><span class="s2">$&quot;</span><span class="p">,</span> <span class="s2">&quot;linestyle&quot;</span><span class="p">:</span> <span class="s2">&quot;--&quot;</span><span class="p">},</span>
+<span class="p">)</span>
+<span class="n">axs</span><span class="p">[</span><span class="o">-</span><span class="mi">1</span><span class="p">,</span> <span class="o">-</span><span class="mi">1</span><span class="p">]</span><span class="o">.</span><span class="n">legend</span><span class="p">(</span><span class="n">bbox_to_anchor</span><span class="o">=</span><span class="p">(</span><span class="mf">1.2</span><span class="p">,</span> <span class="mf">0.5</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[14]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;matplotlib.legend.Legend at 0x7fc7900db990&gt;
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../../_images/_include_notebooks_ex_sampling_23_1.png" src="../../_images/_include_notebooks_ex_sampling_23_1.png" />
+</div>
+</div>
+<p>Having the reference sample, it makes sense to compare it to the TT sample using OT-based distances. But, since different random samples from the same measure define different empirical measures, there is the additional error. This error decreases with the size of the sample, but cannot be efficiently reduced to near-zero values. One of the ways is to compute multiple independent samples from TT and reference and OT distances between them, and compare to distances between samples, drawn
+independently from the reference.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[15]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">from</span><span class="w"> </span><span class="nn">geomloss</span><span class="w"> </span><span class="kn">import</span> <span class="n">SamplesLoss</span>
+<span class="kn">import</span><span class="w"> </span><span class="nn">torch</span>
+
+<span class="n">_S2dist</span> <span class="o">=</span> <span class="n">SamplesLoss</span><span class="p">(</span><span class="n">blur</span><span class="o">=</span><span class="mf">0.1</span><span class="p">)</span>  <span class="c1"># Sinkhorn distance with regularization 0.1</span>
+<span class="n">S2dist</span> <span class="o">=</span> <span class="k">lambda</span> <span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">:</span> <span class="n">_S2dist</span><span class="p">(</span><span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">s1</span><span class="p">),</span> <span class="n">torch</span><span class="o">.</span><span class="n">from_numpy</span><span class="p">(</span><span class="n">s2</span><span class="p">))</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+[KeOps] Warning : Cuda libraries were not detected on the system or could not be loaded ; using cpu only mode
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[16]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">sampling_n_euler_maruyama_steps</span> <span class="o">=</span> <span class="mi">100</span>
+<span class="n">solver</span><span class="o">.</span><span class="n">params</span><span class="o">.</span><span class="n">sampling_sde_fraction</span> <span class="o">=</span> <span class="mf">5e-3</span>
+
+<span class="n">n_draws</span> <span class="o">=</span> <span class="mi">20</span>
+<span class="n">n_samples</span> <span class="o">=</span> <span class="mi">100</span>  <span class="c1"># Number of samples in each draw</span>
+
+<span class="n">samples_tt</span> <span class="o">=</span> <span class="p">[</span><span class="n">solver</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">np</span><span class="o">.</span><span class="n">random</span><span class="o">.</span><span class="n">randn</span><span class="p">(</span><span class="n">n_samples</span><span class="p">,</span> <span class="n">dim</span><span class="p">))</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="n">n_draws</span><span class="p">)]</span>
+<span class="n">samples_ref</span> <span class="o">=</span> <span class="p">[</span><span class="n">gm</span><span class="o">.</span><span class="n">sample</span><span class="p">(</span><span class="n">n_samples</span><span class="p">)</span> <span class="k">for</span> <span class="n">_</span> <span class="ow">in</span> <span class="nb">range</span><span class="p">(</span><span class="mi">2</span> <span class="o">*</span> <span class="n">n_draws</span><span class="p">)]</span>
+
+<span class="n">dist_tt_ref</span> <span class="o">=</span> <span class="p">[</span><span class="n">S2dist</span><span class="p">(</span><span class="n">s_tt</span><span class="p">,</span> <span class="n">s_ref</span><span class="p">)</span> <span class="k">for</span> <span class="n">s_tt</span><span class="p">,</span> <span class="n">s_ref</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">samples_ref</span><span class="p">,</span> <span class="n">samples_tt</span><span class="p">)]</span>
+<span class="n">dist_ref_ref</span> <span class="o">=</span> <span class="p">[</span><span class="n">S2dist</span><span class="p">(</span><span class="n">s1</span><span class="p">,</span> <span class="n">s2</span><span class="p">)</span> <span class="k">for</span> <span class="n">s1</span><span class="p">,</span> <span class="n">s2</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">(</span><span class="n">samples_ref</span><span class="p">,</span> <span class="n">samples_ref</span><span class="p">[</span><span class="n">n_draws</span><span class="p">:])]</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area stderr docutils container">
+<div class="highlight"><pre>
+/home/aksenov/miniconda3/envs/teneva_test/lib/python3.11/site-packages/scipy/sparse/linalg/_dsolve/linsolve.py:412: SparseEfficiencyWarning: splu converted its input to CSC format
+  warn(&#39;splu converted its input to CSC format&#39;, SparseEfficiencyWarning)
+/home/aksenov/miniconda3/envs/teneva_test/lib/python3.11/site-packages/scipy/sparse/linalg/_dsolve/linsolve.py:302: SparseEfficiencyWarning: spsolve is more efficient when sparse b is in the CSC matrix format
+  warn(&#39;spsolve is more efficient when sparse b &#39;
+</pre></div></div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">dist_tt_ref</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;ref to tt&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">hist</span><span class="p">(</span><span class="n">dist_ref_ref</span><span class="p">,</span> <span class="n">label</span><span class="o">=</span><span class="s2">&quot;ref to ref&quot;</span><span class="p">)</span>
+<span class="n">plt</span><span class="o">.</span><span class="n">legend</span><span class="p">()</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[17]:
+</pre></div>
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+&lt;matplotlib.legend.Legend at 0x7fc77fcf2510&gt;
+</pre></div></div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<img alt="../../_images/_include_notebooks_ex_sampling_27_1.png" src="../../_images/_include_notebooks_ex_sampling_27_1.png" />
+</div>
+</div>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[18]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="n">labels</span> <span class="o">=</span> <span class="p">[</span><span class="s2">&quot;tt_ref&quot;</span><span class="p">,</span> <span class="s2">&quot;ref_ref&quot;</span><span class="p">]</span>
+<span class="k">for</span> <span class="n">arr</span><span class="p">,</span> <span class="n">l</span> <span class="ow">in</span> <span class="nb">zip</span><span class="p">([</span><span class="n">dist_tt_ref</span><span class="p">,</span> <span class="n">dist_ref_ref</span><span class="p">],</span> <span class="n">labels</span><span class="p">):</span>
+    <span class="n">arr</span> <span class="o">=</span> <span class="n">np</span><span class="o">.</span><span class="n">array</span><span class="p">(</span><span class="n">arr</span><span class="p">)</span>
+    <span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">l</span><span class="si">}</span><span class="s2"> </span><span class="si">{</span><span class="n">arr</span><span class="o">.</span><span class="n">mean</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">+-</span><span class="si">{</span><span class="n">arr</span><span class="o">.</span><span class="n">std</span><span class="p">()</span><span class="si">:</span><span class="s2">.2f</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+tt_ref 0.68+-0.07
+ref_ref 0.62+-0.09
+</pre></div></div>
+</div>
+<p>Looking at the histogram we can see adequate overlap of the distributions. We can quantify their similarity by computing an OT distance between them (“Double Sinkhorn”). One can see that it’s close to zero.</p>
+<div class="nbinput docutils container">
+<div class="prompt highlight-none notranslate"><div class="highlight"><pre><span></span>[19]:
+</pre></div>
+</div>
+<div class="input_area highlight-ipython3 notranslate"><div class="highlight"><pre><span></span><span class="kn">import</span><span class="w"> </span><span class="nn">ot</span>
+
+<span class="nb">print</span><span class="p">(</span><span class="sa">f</span><span class="s2">&quot;</span><span class="si">{</span><span class="n">ot</span><span class="o">.</span><span class="n">lp</span><span class="o">.</span><span class="n">emd2_1d</span><span class="p">(</span><span class="n">dist_tt_ref</span><span class="p">,</span><span class="w"> </span><span class="n">dist_ref_ref</span><span class="p">)</span><span class="si">:</span><span class="s2">.2e</span><span class="si">}</span><span class="s2">&quot;</span><span class="p">)</span>
+<span class="c1"># Wasserstein distance between distributions of distances</span>
+</pre></div>
+</div>
+</div>
+<div class="nboutput nblast docutils container">
+<div class="prompt empty docutils container">
+</div>
+<div class="output_area docutils container">
+<div class="highlight"><pre>
+4.89e-03
+</pre></div></div>
+</div>
+</section>
+</section>
+</section>
+
+
+           </div>
+          </div>
+          <footer><div class="rst-footer-buttons" role="navigation" aria-label="Footer">
+        <a href="../examples.html" class="btn btn-neutral float-left" title="Examples" accesskey="p" rel="prev"><span class="fa fa-arrow-circle-left" aria-hidden="true"></span> Previous</a>
+    </div>
+
+  <hr/>
+
+  <div role="contentinfo">
+    <p>&#169; Copyright 2024, Vitalii Aksenov.</p>
+  </div>
+
+  Built with <a href="https://www.sphinx-doc.org/">Sphinx</a> using a
+    <a href="https://github.com/readthedocs/sphinx_rtd_theme">theme</a>
+    provided by <a href="https://readthedocs.org">Read the Docs</a>.
+   
+
+</footer>
+        </div>
+      </div>
+    </section>
+  </div>
+  <script>
+      jQuery(function () {
+          SphinxRtdTheme.Navigation.enable(true);
+      });
+  </script> 
+
+</body>
+</html>
