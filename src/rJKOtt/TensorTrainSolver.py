@@ -1012,6 +1012,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         solver_params: TensorTrainSolverParams = None,
         posterior_cache_size: int = int(1e6),
         bound_extend: np.float64 = 0.2,
+        box_centered: bool = True,
     ):
 
         precondition_vector = sample.mean(axis=0)
@@ -1037,8 +1038,12 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         r += pad
 
         grid = Grid(l, r, N_grid)
+        if box_centered:
+            means, sigmas = (l + r) / 2.0, (r - l) / 6.0)
+        else:
+            means, sigmas = 0., 1.
 
-        tt_init = TensorTrainDistribution.gaussian(grid, (l + r) / 2.0, (r - l) / 6.0)
+        tt_init = TensorTrainDistribution.gaussian(grid, means, sigmas)
 
         return TensorTrainSolver(
             rho_infty,
