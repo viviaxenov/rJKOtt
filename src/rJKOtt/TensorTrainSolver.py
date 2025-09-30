@@ -1005,6 +1005,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         eta = _solve_heat_TT(eta_t1, beta, T - t, self.grid)
         return TensorTrainDistribution(self.grid, teneva.mul(hat_eta, eta))
 
+    @staticmethod
     def preconditioned_from_sample(
         sample: np.ndarray,
         rho_infty: Callable,
@@ -1039,7 +1040,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
         grid = Grid(l, r, N_grid)
         if box_centered:
-            means, sigmas = (l + r) / 2.0, (r - l) / 6.0)
+            means, sigmas = (l + r) / 2.0, (r - l) / 6.0
         else:
             means, sigmas = 0., 1.
 
