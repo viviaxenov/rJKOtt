@@ -1,6 +1,7 @@
 from typing import Literal, Callable, Tuple, List, Union, TypeAlias, Dict
 from dataclasses import dataclass
 from functools import lru_cache as cache
+from copy import deepcopy
 from docstring_inheritance import GoogleDocstringInheritanceInitMeta
 import warnings
 
@@ -80,6 +81,22 @@ def _solve_heat_TT(
     return [np.einsum("ij,kjl->kil", U, v) for U, v in zip(mat_exps, eta)]
 
 
+def _scale_stabilize_potentials(eta: tt_vector, hat_eta: tt_vector):
+    """Remove ambiguity in definition of the entropic potentials by making their average equal (for numerical stability)"""
+    n_eta = teneva.sum(eta)
+    n_hat_eta = teneva.sum(hat_eta)
+    C = np.sqrt(n_hat_eta / n_eta)
+    dim = len(eta)
+
+    if C > 0.0:
+        # print(C)
+        c = C ** (1.0 / dim)
+        eta = [_core * c for _core in eta]
+        hat_eta = [_core / c for _core in hat_eta]
+
+    return eta, hat_eta
+
+
 def _fixed_point_picard(
     x_cur: tt_vector,
     g_cur: tt_vector,
@@ -101,22 +118,6 @@ def _fixed_point_picard(
     )
 
     return x_new, relaxation
-
-
-def _scale_stabilize_potentials(eta: tt_vector, hat_eta: tt_vector):
-    """Remove ambiguity in definition of the entropic potentials by making their average equal (for numerical stability)"""
-    n_eta = teneva.sum(eta)
-    n_hat_eta = teneva.sum(hat_eta)
-    C = np.sqrt(n_hat_eta / n_eta)
-    dim = len(eta)
-
-    if C > 0.0:
-        # print(C)
-        c = C ** (1.0 / dim)
-        eta = [_core * c for _core in eta]
-        hat_eta = [_core / c for _core in hat_eta]
-
-    return eta, hat_eta
 
 
 def _fixed_point_aitken(
@@ -296,6 +297,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         posterior_cache_size: int = int(1e6),
         precondition_matrix: np.ndarray = None,
         precondition_vector: np.ndarray = None,
+        initial_potentials: Tuple[tt_vector, tt_vector] = None,
     ):
         if solver_params is None:
             solver_params = TensorTrainSolverParams()  # default params
@@ -314,7 +316,9 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         else:
             self._A_pc = np.eye(self.grid.dim)
 
-        self._rho_infty = lambda _x: rho_infty(
+        self._posterior_fn_original = rho_infty
+
+        self._rho_infty = lambda _x: self._posterior_fn_original(
             np.einsum("ij,kj->ki", self._A_pc, _x) + self._m_pc[np.newaxis, :]
         )
 
@@ -335,13 +339,22 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         self.KLs_est = []
 
         # Initialize variables for step
-        self._rho_cur, self._eta_cur, self._hat_eta_cur = self._init_potentials(
-            rho_start.rho_tt
-        )
+        if initial_potentials is None:
+            print("Initializing potentials...")
+            self._rho_cur, self._eta_cur, self._hat_eta_cur = self._init_potentials(
+                rho_start.rho_tt
+            )
+        else:
+            self._rho_cur = rho_start.rho_tt
+            self._eta_cur, self._hat_eta_cur = initial_potentials
 
     @property
     def pc(self) -> Tuple[np.array, np.array]:
         return self._A_pc, self._m_pc
+
+    @property
+    def dim(self) -> int:
+        return self.grid.dim
 
     def _init_potentials(
         self,
@@ -843,15 +856,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         self._eta_cur = eta_cur
         self._hat_eta_cur = hat_eta_cur
 
-        rho_cur = teneva.truncate(
-            teneva.mul(eta_cur, hat_eta_cur),
-            e=self.params.trunc_tol_density,
-            r=self.params.max_rank_density,
-        )
-        Z_const = teneva.sum(rho_cur) * np.prod(self.grid.hx)
-        rho_cur = teneva.mul(rho_cur, 1.0 / Z_const)
-
-        self._rho_cur = rho_cur
+        self._rho_cur = self._density_from_potentials(eta_cur, hat_eta_cur)
 
         self.KLs.append(self._KL())
         self.KLs_est.append(self._KL_est(beta))
@@ -865,6 +870,16 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             )
         else:
             return
+
+    def _density_from_potentials(self, eta: tt_vector, hat_eta: tt_vector) -> tt_vector:
+        rho = teneva.truncate(
+            teneva.mul(eta, hat_eta),
+            e=self.params.trunc_tol_density,
+            r=self.params.max_rank_density,
+        )
+        Z_const = teneva.sum(rho) * np.prod(self.grid.hx)
+        rho = teneva.mul(rho, 1.0 / Z_const)
+        return rho
 
     def _get_drift_terms_fn(
         self,
@@ -919,10 +934,142 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
         return _v
 
+    def get_current_distribution(
+        self,
+    ) -> TensorTrainDistribution:
+        return TensorTrainDistribution(self.grid, self._rho_cur)
+
+    def get_intermediate_distribution(self, t: np.float64, step_no=-1):
+        eta_t1 = self._etas_t1[step_no]
+        hat_eta_t0 = self._hat_etas_t0[step_no]
+        beta = self.betas[step_no]
+        T = self.Ts[step_no]
+        assert 0 <= t and t <= T
+
+        hat_eta = _solve_heat_TT(hat_eta_t0, beta, t, self.grid)
+        eta = _solve_heat_TT(eta_t1, beta, T - t, self.grid)
+        rho_tt = self._density_from_potentials(eta, hat_eta)
+        return TensorTrainDistribution(self.grid, rho_tt)
+
+    def reset_posterior(self, new_posterior: Callable):
+        """Create a solver for a new (similar) inverse problem, retaining the setup
+
+        Information retained is:
+            - Preconditioning linear mapping
+            - Grid (in the preconditioned coordinates)
+            - Starting distribution (in the form of the TT approximation)
+            - Potentials (i.e. there is a warmstart of the fixed-point iteration)
+            - Parameter values
+
+        Args:
+            new_posterior: density of the new target distribution
+
+        Returns:
+            The solver instance for a new problem
+        """
+        if len(self.betas) != 1:
+            raise NotImplementedError(
+                "Re-use of the solver for more that one steps is not defined yet"
+            )
+        tt_init = self.get_intermediate_distribution(t=0.0, step_no=0)
+        new_potentials = (deepcopy(self._eta_cur), deepcopy(self._hat_eta_cur))
+        new_solver = TensorTrainSolver(
+            new_posterior,
+            tt_init,
+            deepcopy(self.params),
+            self.posterior_cache_max_size,
+            self._A_pc,
+            self._m_pc,
+            new_potentials,
+        )
+        return new_solver
+
+    @staticmethod
+    def preconditioned_from_sample(
+        sample: np.ndarray,
+        rho_infty: Callable,
+        N_grid: Union[int, List[int]] = 50,
+        solver_params: TensorTrainSolverParams = None,
+        posterior_cache_size: int = int(1e6),
+        bound_extend: np.float64 = 0.2,
+        box_centered: bool = True,
+    ):
+
+        precondition_vector = sample.mean(axis=0)
+        cov = np.cov(sample, rowvar=False)
+
+        assert np.allclose(cov, cov.T)
+        U, S, V = np.linalg.svd(cov, hermitian=True)
+        S = np.maximum(S, 1e-10)
+        precondition_matrix = (U * S**0.5) @ V
+        pc_sq_inv = (U * S ** (-0.5)) @ V
+
+        print(U.shape, S.shape, V.shape)
+
+        sample_centered = sample - precondition_vector
+        pc_sample = np.einsum("ij,kj->ki", pc_sq_inv, sample_centered)
+
+        l = np.min(pc_sample, axis=0)
+        r = np.max(pc_sample, axis=0)
+
+        pad = (r - l) * bound_extend
+
+        l -= pad
+        r += pad
+
+        grid = Grid(l, r, N_grid)
+        if box_centered:
+            means, sigmas = (l + r) / 2.0, (r - l) / 6.0
+        else:
+            means, sigmas = 0.0, 1.0
+
+        tt_init = TensorTrainDistribution.gaussian(grid, means, sigmas)
+
+        return TensorTrainSolver(
+            rho_infty,
+            tt_init,
+            solver_params,
+            posterior_cache_size,
+            precondition_matrix=precondition_matrix,
+            precondition_vector=precondition_vector,
+        )
+
     def sample(
         self,
+        n_samples: int = 100,
+        method: Literal["tt", "ode"] = "ode",
+        init_method: Literal["tt", "normal"] = "normal",
         sample_x0: np.ndarray = None,
-        N_samples: int = 100,
+    ) -> np.ndarray:
+        match method:
+            case "tt":
+                x_cur = self.get_current_distribution().sample(n_samples)
+            case "ode":
+                if sample_x0 is None:
+                    if init_method == "normal":
+                        sample_x0 = np.random.randn(n_samples, self.dim)
+                    elif init_method == "tt":
+                        tt_dist_init = self.get_intermediate_distribution(
+                            0.0, step_no=0
+                        )
+                        sample_x0 = tt_dist_init.sample(n_samples=n_samples)
+                    else:
+                        raise ValueError(
+                            f"Wrong initial sampling method; must be 'tt' or 'normal`; got {init_method}"
+                        )
+                x_cur = self._propagate_ode(sample_x0)
+            case _:
+                raise ValueError(
+                    f"Wrong sampling method; must be 'tt' or 'ode'; got {method}"
+                )
+        # Reverse from the preconditioned to the original coordinates
+        x_cur = np.einsum("ij,kj->ki", self._A_pc, x_cur) + self._m_pc[np.newaxis, :]
+
+        return x_cur
+
+    def _propagate_ode(
+        self,
+        sample_x0: np.ndarray,
     ) -> np.ndarray:
         """Starting from the sample from the initial distribution, propagate it through the fitted dynamics and return a sample from the distribution on the last step.
 
@@ -932,16 +1079,9 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         Returns:
             np.ndarray : sample from the distribution of the last step
         """
-        if sample_x0 is None:
-            l, r, _ = self.grid
-            mean = (r + l) / 2.0
-            sigma = (r - l) / 6.0
-            Z = np.random.randn(N_samples, self.grid.dim)
-            sample_x0 = sigma[np.newaxis, :] * Z + mean[np.newaxis, :]
 
         x_cur = sample_x0.copy()
         x_cur = self.grid.clip_sample(x_cur)
-        dim = sample_x0.shape[-1]
         n_em = (
             self.params.sampling_n_euler_maruyama_steps
             if self.params.sampling_sde_fraction > 0
@@ -985,72 +1125,4 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                 ) * np.random.randn(*x_cur.shape)
                 t_cur += tau_em
                 x_cur = self.grid.clip_sample(x_cur)
-
-        x_cur = np.einsum("ij,kj->ki", self._A_pc, x_cur) + self._m_pc[np.newaxis, :]
         return x_cur
-
-    def get_current_distribution(
-        self,
-    ) -> TensorTrainDistribution:
-        return TensorTrainDistribution(self.grid, self._rho_cur)
-
-    def get_intermediate_distribution(self, t: np.float64, step_no=-1):
-        eta_t1 = self._etas_t1[step_no]
-        hat_eta_t0 = self._hat_etas_t0[step_no]
-        beta = self.betas[step_no]
-        T = self.Ts[step_no]
-        assert 0 <= t and t <= T
-
-        hat_eta = _solve_heat_TT(hat_eta_t0, beta, t, self.grid)
-        eta = _solve_heat_TT(eta_t1, beta, T - t, self.grid)
-        return TensorTrainDistribution(self.grid, teneva.mul(hat_eta, eta))
-
-    @staticmethod
-    def preconditioned_from_sample(
-        sample: np.ndarray,
-        rho_infty: Callable,
-        N_grid: Union[int, List[int]] = 50,
-        solver_params: TensorTrainSolverParams = None,
-        posterior_cache_size: int = int(1e6),
-        bound_extend: np.float64 = 0.2,
-        box_centered: bool = True,
-    ):
-
-        precondition_vector = sample.mean(axis=0)
-        cov = np.cov(sample, rowvar=False)
-
-        assert(np.allclose(cov, cov.T))
-        U, S, V = np.linalg.svd(cov, hermitian=True)
-        S = np.maximum(S, 1e-10)
-        precondition_matrix = (U * S**0.5) @ V
-        pc_sq_inv = (U * S ** (-0.5)) @ V
-
-        print(U.shape, S.shape, V.shape)
-
-        sample_centered = sample - precondition_vector
-        pc_sample = np.einsum("ij,kj->ki", pc_sq_inv, sample_centered)
-
-        l = np.min(pc_sample, axis=0)
-        r = np.max(pc_sample, axis=0)
-
-        pad = (r - l) * bound_extend
-
-        l -= pad
-        r += pad
-
-        grid = Grid(l, r, N_grid)
-        if box_centered:
-            means, sigmas = (l + r) / 2.0, (r - l) / 6.0
-        else:
-            means, sigmas = 0., 1.
-
-        tt_init = TensorTrainDistribution.gaussian(grid, means, sigmas)
-
-        return TensorTrainSolver(
-            rho_infty,
-            tt_init,
-            solver_params,
-            posterior_cache_size,
-            precondition_matrix=precondition_matrix,
-            precondition_vector=precondition_vector,
-        )

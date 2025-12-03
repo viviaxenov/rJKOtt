@@ -914,13 +914,34 @@ class TensorTrainDistribution(DistributionOnGrid):
         grid_new = self.adapt_grid(interval_prob, N_new)
         return self.interpolate(grid_new)
 
+    def sample(
+        self, n_samples: int, refine_factor: int = 100, seed: int = None
+    ) -> np.ndarray:
+        """Samples from the distribution, using the conditinal marginal method.
+
+        Args:
+            n_samples: number of samples produced
+            refine_factor: the number of additional grid nodes in the interpolation
+            seed: random seed
+
+        Returns:
+            np.ndarray: a sample of shape `[n_samples, dim]`
+
+        """
+        l, r, N = self.grid
+        N_new = [n * refine_factor for n in N]
+        grid_new = Grid(l, r, N_nodes=N_new)
+        tt_refined = self.interpolate(grid_new)
+        cond_indices = teneva.sample(tt_refined.rho_tt, m=n_samples)
+        return teneva.ind_to_poi(cond_indices, *tt_refined.grid)
+
     def adapt_by_gaussian(
         self: rJKOtt.TensorTrainDistribution,
         interval_prob: np.float64 = 0.997,
         N_new=None,
-        return_params:bool = False
+        return_params: bool = False,
     ):
-        """Adapts the grid do be a minimal interval containing `interval_prob` of the distribution in each direction. 
+        """Adapts the grid do be a minimal interval containing `interval_prob` of the distribution in each direction.
         Returns a new distribution, which is a product of independent Gaussians, with same mean and covariance in each direction
 
         Args:
@@ -934,8 +955,8 @@ class TensorTrainDistribution(DistributionOnGrid):
         """
         grid_new = self.adapt_grid(interval_prob, N_new)
         lower, upper, _ = grid_new
-        means = (lower + upper)/2.
-        sigmas = (upper - lower)/6.
+        means = (lower + upper) / 2.0
+        sigmas = (upper - lower) / 6.0
         # for i in range(self.dim):
         #     rho_1d = self.get_marginal_on_grid(i)
         #     rho_1d = np.maximum(0., rho_1d)
