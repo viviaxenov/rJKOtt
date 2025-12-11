@@ -348,6 +348,31 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             self._rho_cur = rho_start.rho_tt
             self._eta_cur, self._hat_eta_cur = initial_potentials
 
+
+    def save_pickle(self, path: str):
+        import pickle
+        tt_init = self.get_intermediate_distribution(t=0.0, step_no=0)
+        new_potentials = (self._eta_cur, self._hat_eta_cur)
+        state = (
+            tt_init,
+            deepcopy(self.params),
+            self.posterior_cache_max_size,
+            self._A_pc,
+            self._m_pc,
+            new_potentials,
+        )
+        with open(path, "wb") as ofile:
+            pickle.dump(state, ofile)
+        return 
+
+    @staticmethod
+    def load_pickle(path: str, new_posterior: Callable):
+        import pickle
+        with open(path, 'rb') as ifile:
+           state = pickle.load(ifile) 
+        return TensorTrainSolver(new_posterior, *state)
+        
+
     @property
     def pc(self) -> Tuple[np.array, np.array]:
         return self._A_pc, self._m_pc
