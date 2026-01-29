@@ -6,6 +6,9 @@ from docstring_inheritance import GoogleDocstringInheritanceInitMeta
 import warnings
 
 import numpy as np
+import scipy as sp
+import scipy.optimize
+import scipy.differentiate
 from scipy.sparse import diags
 from scipy.sparse.linalg import expm, eigsh
 from scipy.integrate import solve_ivp
@@ -348,9 +351,9 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             self._rho_cur = rho_start.rho_tt
             self._eta_cur, self._hat_eta_cur = initial_potentials
 
-
     def save_pickle(self, path: str):
         import pickle
+
         tt_init = self.get_intermediate_distribution(t=0.0, step_no=0)
         new_potentials = (self._eta_cur, self._hat_eta_cur)
         state = (
@@ -363,15 +366,15 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         )
         with open(path, "wb") as ofile:
             pickle.dump(state, ofile)
-        return 
+        return
 
     @staticmethod
     def load_pickle(path: str, new_posterior: Callable):
         import pickle
-        with open(path, 'rb') as ifile:
-           state = pickle.load(ifile) 
+
+        with open(path, "rb") as ifile:
+            state = pickle.load(ifile)
         return TensorTrainSolver(new_posterior, *state)
-        
 
     @property
     def pc(self) -> Tuple[np.array, np.array]:
@@ -1058,6 +1061,70 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             precondition_matrix=precondition_matrix,
             precondition_vector=precondition_vector,
         )
+
+    @staticmethod
+    def get_preconditioning_laplace(
+        log_rho_infty: Callable,
+        x0: np.ndarray,
+        nfev: int = None,
+        opt_method: str = "Nelder-Mead",
+    ):
+        """Finds the mean and covariance estimate for preconditioning using the Laplace approximation
+
+        The Laplace method approximates the mean and the covariance of the given distribution as
+
+        .. math::
+
+            \\mu = \\arg\\min_x - \\log\\rho_\\infty(x)
+
+            \\Sigma = \\left. (-\\nabla^2 \\log\\rho_\\infty(x))^{-1} \\right \\|_{x = m}
+
+        .. NOTE::
+            You need to pass the **log density** of the posterior, and not the density, as in `TensorTrainSolver` creation routines.
+
+        Args:
+            log_rho_infty : the function :math:`\\log\\rho_\\infty`. Signature `(N_samples, dim) -> (dim,)`
+            x0 : initial guess for :math:`\\mu`
+            nfev : maximum amount of function evaluations
+            opt_method : optimization method for finding the :math:`m` approximate. Default `"Nelder-Mead"`, can also see other zero-order methods in `scipy.optimize.minimize`
+
+        Returns:
+            tuple[np.ndarray, np.ndarray, int]:
+                 - m : Estimated mean
+                 - Sigma : Estimated covariamce matrix
+                 - total_fev : Number of function evaluations performed
+
+        """
+
+        dim = x0.shape[-1]
+
+        ll_target = lambda _x: -log_rho_infty(np.atleast_2d(_x))
+        res = sp.optimize.minimize(
+            ll_target, x0, method=opt_method, options=dict(maxfev=nfev)
+        )
+        x_map = res.x
+        
+
+        def ll_wrapped_for_hessian(x):
+            arg = np.atleast_2d(x)
+            orig_shape = arg.shape
+            arg = np.moveaxis(arg, 0, -1)
+            arg = arg.reshape((-1, dim))
+            fval = -log_rho_infty(arg)
+            if fval.shape == (1,):
+                return fval[0]
+            return fval.reshape(orig_shape[1:])
+
+        hess_res = sp.differentiate.hessian(
+            ll_wrapped_for_hessian,
+            x_map,
+        )
+
+        Sigma = sp.linalg.inv(hess_res.ddf)
+
+        total_fev = res.nfev + hess_res.nfev
+
+        return x_map, Sigma, total_fev
 
     def sample(
         self,

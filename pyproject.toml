@@ -12,10 +12,11 @@ version = "0.1"
 requires-python = ">= 3.8"
 dependencies = [
     "numpy",
+    "scipy >= 1.17",
     "docstring-inheritance", 
     "numba >= 0.59.1",
     "teneva >= 0.14.8", 
-    "typing_extensions >= 4.11.0", 
+    "typing_extensions >= 4.11.0"
 ]
 
 [project.optional-dependencies]
