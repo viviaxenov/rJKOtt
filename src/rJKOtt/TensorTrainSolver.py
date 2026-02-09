@@ -316,8 +316,10 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         if precondition_matrix is not None:
             assert precondition_matrix.shape == (self.grid.dim, self.grid.dim)
             self._A_pc = precondition_matrix.copy()
+            self._A_inv_pc = np.linalg.inv(precondition_matrix)
         else:
             self._A_pc = np.eye(self.grid.dim)
+            self._A_inv_pc = np.eye(self.grid.dim)
 
         self._posterior_fn_original = rho_infty
 
@@ -1122,9 +1124,15 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
         Sigma = sp.linalg.inv(hess_res.ddf)
 
-        total_fev = res.nfev + hess_res.nfev
+        total_fev = res.nfev + hess_res.nfev.sum()
 
         return x_map, Sigma, total_fev
+
+    def pc_to_original(self, x):
+        return np.einsum("ij,kj->ki", self._A_pc, x) + self._m_pc[np.newaxis, :]
+
+    def original_to_pc(self, y):
+        return np.einsum("ij,kj->ki", self._A_inv_pc, y - self._m_pc[np.newaxis, :])  
 
     def sample(
         self,
