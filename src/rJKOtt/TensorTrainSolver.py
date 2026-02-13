@@ -12,6 +12,7 @@ import scipy.differentiate
 from scipy.sparse import diags
 from scipy.sparse.linalg import expm, eigsh
 from scipy.integrate import solve_ivp
+from scipy.special import logsumexp
 import teneva
 
 import matplotlib.pyplot as plt
@@ -294,7 +295,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
     def __init__(
         self,
-        rho_infty: Callable,
+        log_posterior: Callable,
         rho_start: TensorTrainDistribution,
         solver_params: TensorTrainSolverParams = None,
         posterior_cache_size: int = int(1e6),
@@ -321,11 +322,12 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             self._A_pc = np.eye(self.grid.dim)
             self._A_inv_pc = np.eye(self.grid.dim)
 
-        self._posterior_fn_original = rho_infty
+        self._log_posterior_fn_original = log_posterior
 
-        self._rho_infty = lambda _x: self._posterior_fn_original(
+        self._log_rho_infty = lambda _x: self._log_posterior_fn_original(
             np.einsum("ij,kj->ki", self._A_pc, _x) + self._m_pc[np.newaxis, :]
         )
+        self._C = 0.0  # guess for the normalization constant
 
         # Cache-related stuff
         self.posterior_cache_max_size = posterior_cache_size
@@ -446,7 +448,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         if len(idx_new) > 0:
             x_new = teneva.ind_to_poi(I_new, *self.grid)
 
-            Y_new = self._rho_infty(x_new)
+            Y_new = self._log_rho_infty(x_new)
             Y_return[idx_new] = Y_new
 
         if update:
@@ -460,6 +462,8 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
             self.n_cache += len(idx_old)
             self.n_calls += len(idx_new)
+
+            self._C = logsumexp(np.stack(list(self._posterior_cache.values())))
 
         return Y_return
 
@@ -593,12 +597,18 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             Y_test = None
             e_test = None
 
-        rhs_fn_cached = lambda _I: (
-            self._eval_posterior_cached(_I)
-            / np.maximum(
-                teneva.act_one.get_many(hat_eta, _I), self.params.zero_threshold
+        rhs_fn_cached = lambda _I: np.exp(
+            (
+                self._eval_posterior_cached(_I)
+                - self._C
+                - np.log(
+                    np.maximum(
+                        teneva.act_one.get_many(hat_eta, _I), self.params.zero_threshold
+                    )
+                )
             )
-        ) ** (1.0 / (1.0 + 2.0 * beta))
+            / (1.0 + 2.0 * beta)
+        )
         info = {}
 
         print("\tSolving terminal condition ", end="", flush=True)
@@ -686,19 +696,17 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         """
         # TODO: this is not working properly if the state hasn't been set properly! fix.
         print("Computing KL err", flush=True)
-        rhs_fn = lambda _S: np.log(
-            np.maximum(
+
+        def rhs_fn(_S):
+            rho_at_idx = np.maximum(
                 teneva.act_one.get_many(self._rho_cur, _S),
                 self.params.zero_threshold,
             )
-            / np.maximum(
-                self._eval_posterior_cached(
-                    _S,
-                    update=False,
-                ),
-                self.params.zero_threshold,
-            )
-        ) * teneva.act_one.get_many(self._rho_cur, _S)
+
+            log_rho_at_idx = np.log(rho_at_idx)
+            log_posterior = self._eval_posterior_cached(_S, update=False) - self._C
+
+            return (log_rho_at_idx - log_posterior) * rho_at_idx
 
         log_quot = teneva.cross(
             rhs_fn,
@@ -708,9 +716,8 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             e=self.params.cross_rel_diff,
             m=self.params.cross_nfev_with_posterior,
         )
-        return teneva.sum(
-            log_quot,
-        ) * np.prod(self.grid.hx)
+        log_quot = [core * h for core, h in zip(log_quot, self.grid.hx)]
+        return teneva.sum(log_quot)
 
     def _KL_est(
         self,
@@ -888,8 +895,14 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
         self._rho_cur = self._density_from_potentials(eta_cur, hat_eta_cur)
 
-        self.KLs.append(self._KL())
-        self.KLs_est.append(self._KL_est(beta))
+        try:
+            self.KLs.append(self._KL())
+        except ValueError:
+            self.KLs.append(np.nan)
+        try:
+            self.KLs_est.append(self._KL_est(beta))
+        except ValueError:
+            self.KLs.append(np.nan)
 
         if save_history:
             return (
@@ -907,7 +920,8 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             e=self.params.trunc_tol_density,
             r=self.params.max_rank_density,
         )
-        Z_const = teneva.sum(rho) * np.prod(self.grid.hx)
+        rho = [core * h for core, h in zip(rho, self.grid.hx)]
+        Z_const = teneva.sum(rho) 
         rho = teneva.mul(rho, 1.0 / Z_const)
         return rho
 
@@ -1105,7 +1119,6 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             ll_target, x0, method=opt_method, options=dict(maxfev=nfev)
         )
         x_map = res.x
-        
 
         def ll_wrapped_for_hessian(x):
             arg = np.atleast_2d(x)
@@ -1132,7 +1145,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         return np.einsum("ij,kj->ki", self._A_pc, x) + self._m_pc[np.newaxis, :]
 
     def original_to_pc(self, y):
-        return np.einsum("ij,kj->ki", self._A_inv_pc, y - self._m_pc[np.newaxis, :])  
+        return np.einsum("ij,kj->ki", self._A_inv_pc, y - self._m_pc[np.newaxis, :])
 
     def sample(
         self,
