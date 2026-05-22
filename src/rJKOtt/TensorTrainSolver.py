@@ -87,6 +87,7 @@ def _solve_heat_TT(
 
 def _scale_stabilize_potentials(eta: tt_vector, hat_eta: tt_vector):
     """Remove ambiguity in definition of the entropic potentials by making their average equal (for numerical stability)"""
+    return eta, hat_eta
     n_eta = teneva.sum(eta)
     n_hat_eta = teneva.sum(hat_eta)
     C = np.sqrt(n_hat_eta / n_eta)
@@ -540,7 +541,10 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         print("\tRounding                   ", end="", flush=True)
         t = perf_counter()
         hat_eta = teneva.truncate(
-            hat_eta, self.params.trunc_tol_hat_eta, self.params.max_rank_hat_eta
+            hat_eta,
+            self.params.trunc_tol_hat_eta,
+            self.params.max_rank_hat_eta,
+            use_stab=True,
         )
         dt = perf_counter() - t
         rank_str = " ".join([f"{_r:2d}" for _r in teneva.ranks(hat_eta)])
@@ -597,17 +601,21 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             Y_test = None
             e_test = None
 
-        rhs_fn_cached = lambda _I: np.exp(
-            (
-                self._eval_posterior_cached(_I)
-                - self._C
-                - np.log(
-                    np.maximum(
-                        teneva.act_one.get_many(hat_eta, _I), self.params.zero_threshold
+        rhs_fn_cached = lambda _I: np.maximum(
+            np.exp(
+                (
+                    self._eval_posterior_cached(_I)
+                    - self._C
+                    - np.log(
+                        np.maximum(
+                            teneva.act_one.get_many(hat_eta, _I).astype(np.longdouble),
+                            self.params.zero_threshold,
+                        )
                     )
                 )
-            )
-            / (1.0 + 2.0 * beta)
+                / (1.0 + 2.0 * beta)
+            ).astype(np.float64),
+            self.params.zero_threshold,
         )
         info = {}
 
@@ -644,7 +652,10 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         print("\tRounding                   ", end="", flush=True)
         t = perf_counter()
         eta = teneva.truncate(
-            eta, e=self.params.trunc_tol_eta, r=self.params.max_rank_eta
+            eta,
+            e=self.params.trunc_tol_eta,
+            r=self.params.max_rank_eta,
+            use_stab=True,
         )
         dt = perf_counter() - t
         # Some further diagnostic printing
@@ -807,10 +818,12 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
         ranks = []
 
         fp_err_old = np.inf
+        gauged_err_old = np.inf
+        gauged_rel_err_old = np.inf
 
         for _i in range(self.params.fp_max_iter):
             print(
-                f"Starting FP step {_i + 1} rel_err {fp_err_old:.2e}",
+                    f"Starting FP step {_i + 1} rel_err {fp_err_old:.2e} gauged err {gauged_err_old:.2e} rel {gauged_rel_err_old:.2e}",
                 flush=True,
             )
             try:
@@ -844,6 +857,15 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
 
             abs_err = teneva.norm(teneva.sub(tilde_eta_cur, eta_cur))
             fp_rel_err = abs_err / teneva.norm(eta_cur)
+
+            # Error w.r.t gauge invariance, i.e.
+            # min_{\alpha > 0} \| \alpha\eta - \tilde\eta\|^2
+            norm_sq_tilde_eta = teneva.act_two.mul_scalar(tilde_eta_cur, tilde_eta_cur)
+            norm_sq_eta = teneva.act_two.mul_scalar(eta_cur, eta_cur)
+            eta_tilde_eta = teneva.act_two.mul_scalar(eta_cur, tilde_eta_cur)
+            fp_err_gauged = norm_sq_tilde_eta - eta_tilde_eta**2 / norm_sq_eta
+            fp_rel_err_gauged = np.sqrt(fp_err_gauged / norm_sq_tilde_eta)
+
             rk = max(teneva.props.ranks(eta_cur))
 
             abs_errors.append(abs_err)
@@ -857,6 +879,8 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
                 break
 
             fp_err_old = fp_rel_err
+            gauged_err_old = fp_err_gauged
+            gauged_rel_err_old = fp_rel_err_gauged
 
             # TODO: a proper class for the update, i.e, for anderson > 2 managing the history
             if _i > 1:
@@ -921,7 +945,7 @@ class TensorTrainSolver(metaclass=GoogleDocstringInheritanceInitMeta):
             r=self.params.max_rank_density,
         )
         rho = [core * h for core, h in zip(rho, self.grid.hx)]
-        Z_const = teneva.sum(rho) 
+        Z_const = teneva.sum(rho)
         rho = teneva.mul(rho, 1.0 / Z_const)
         return rho
 

@@ -787,13 +787,13 @@ class TensorTrainDistribution(DistributionOnGrid):
         super().__init__(grid)
         self.rho_tt = rho_tt
         self._normalization_const = teneva.sum(self.rho_tt) * np.prod(self.grid.hx)
-        self.rho_tt = teneva.mul(self.rho_tt, 1.0 / self._normalization_const)
-        self._rho_getter = teneva.act_one.getter(self.rho_tt)
+        nc_inv = teneva.const(teneva.shape(self.rho_tt), 1./self._normalization_const)
+        self.rho_tt = teneva.mul(self.rho_tt, nc_inv)
 
     def density(self, x: np.ndarray) -> np.ndarray:
         return tt_on_grid_interpolate(x, self.rho_tt, self.grid)
 
-    def score(self, x: np.nda) -> np.ndarray:
+    def score(self, x: np.ndarray) -> np.ndarray:
         """
         Note: docstring TBD
         """
@@ -974,8 +974,11 @@ class TensorTrainDistribution(DistributionOnGrid):
 
     @classmethod
     def rank1_fx(
-        cls, grid: Grid, fns: Union[List[Callable], Callable]
-    ) -> TensorTrainDistribution:
+        cls,
+        grid: Grid,
+        fns: Union[List[Callable], Callable],
+        dtype: np.dtype = np.float64,
+    ) -> TensorTrainDitribution:
         """Convenience function to create a rank-1 TT with components
 
         .. math::
@@ -998,7 +1001,8 @@ class TensorTrainDistribution(DistributionOnGrid):
         assert len(fns) == grid.dim
 
         tt_nodes = [
-            f(grid.get_1d_grid(i)).reshape((1, -1, 1)) for i, f in enumerate(fns)
+            f(grid.get_1d_grid(i)).reshape((1, -1, 1)).astype(dtype)
+            for i, f in enumerate(fns)
         ]
         return cls(grid, tt_nodes)
 
@@ -1008,6 +1012,7 @@ class TensorTrainDistribution(DistributionOnGrid):
         grid: Grid,
         ms: Union[float, List[float], np.ndarray] = 0.0,
         sigmas: Union[float, List[float], np.ndarray] = 1.0,
+        dtype: np.dtype = np.float64,
     ) -> TensorTrainDistribution:
         """A TT approximation of the density of the distribution with each parameter being independent and distributed as
 
@@ -1037,4 +1042,4 @@ class TensorTrainDistribution(DistributionOnGrid):
 
         fns = [norm(loc=m, scale=sigma).pdf for m, sigma in zip(ms, sigmas)]
 
-        return cls.rank1_fx(grid, fns)
+        return cls.rank1_fx(grid, fns, dtype=dtype)
