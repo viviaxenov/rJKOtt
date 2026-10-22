@@ -1,5 +1,7 @@
 # rJKOtt
 
+![image](./docs/_include/graphic_abstract.png)
+
 The project aims at modelling probability distributions with use of entropy-**r**egularized **JKO** scheme with **t**ensor-**t**rain decomposition.
 
 The goal is, given pointwise access to the unnormalized density of a complicated probability distribution in high dimension, to fit a compressed model which will allow to sample from it and solve some downstream tasks.
