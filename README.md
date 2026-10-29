@@ -19,7 +19,7 @@ pip install --upgrade rJKOtt@git+https://github.com/viviaxenov/rJKOtt
   - TBD
 
 ## Documentation, examples, etc
-  - Documentation can be found [here](viviaxenov.github.io/rJKOtt/).
+  - Documentation can be found [here](https://viviaxenov.github.io/rJKOtt/index.html).
   - An [example](https://viviaxenov.github.io/rJKOtt/_include/notebooks/ex_sampling.html) with explanation of basic theory
   - Tests  &ndash; TBD
 ## Citation
